@@ -1,0 +1,94 @@
+version: '3.9'
+
+services:
+  # ─── PostgreSQL ───────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: pilatesms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-pilates}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pilates123}
+      POSTGRES_DB: ${DB_NAME:-pilatesms}
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-pilates}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: pilatesms_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123}
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── pgAdmin ──────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pilatesms_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@pilatesms.vn}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+    ports:
+      - '5051:80'
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  # ─── Backend (NestJS) ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pilatesms_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: npm run start:dev
+
+  # ─── Web Admin (React) ────────────────────────────────
+  web-admin:
+    build:
+      context: ./web-admin
+      dockerfile: Dockerfile
+    container_name: pilatesms_webadmin
+    restart: unless-stopped
+    ports:
+      - '3002:3000'
+    depends_on:
+      - backend
+    volumes:
+      - ./web-admin:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
