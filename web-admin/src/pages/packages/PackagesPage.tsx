@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import toast from 'react-hot-toast'
 import { Plus, Check, Edit, Trash2, Tag, Calendar, Dumbbell } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -106,8 +107,17 @@ export default function PackagesPage() {
     description: '',
   })
 
-  const packages = (apiPackages && Array.isArray(apiPackages) && apiPackages.length > 0)
-    ? apiPackages.map((p: any) => ({
+  const [deletedMockIds, setDeletedMockIds] = useState<string[]>([])
+
+  const apiItems: any[] = Array.isArray(apiPackages)
+    ? apiPackages
+    : (apiPackages as any)?.items || (apiPackages as any)?.data || []
+
+  const isUuid = (str: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+  const packages = (apiItems.length > 0)
+    ? apiItems.map((p: any) => ({
         id: p.id,
         name: p.name,
         type: p.type === 'unlimited' ? 'Theo thời gian' : 'Theo buổi',
@@ -124,7 +134,7 @@ export default function PackagesPage() {
         isActive: p.isActive,
         isPopular: p.name?.includes('10'),
       }))
-    : mockPackages
+    : mockPackages.filter((m) => !deletedMockIds.includes(m.id))
 
   const handleCreate = async () => {
     if (!formData.name.trim()) return
@@ -227,7 +237,12 @@ export default function PackagesPage() {
                 className="w-full text-red-500 hover:text-red-700 hover:bg-red-50 flex items-center justify-center gap-1"
                 onClick={() => {
                   if (confirm(`Bạn có chắc muốn xóa gói "${pkg.name}"?`)) {
-                    deletePackage.mutate(pkg.id)
+                    if (isUuid(pkg.id)) {
+                      deletePackage.mutate(pkg.id)
+                    } else {
+                      setDeletedMockIds((prev) => [...prev, pkg.id])
+                      toast.success('Xóa gói tập thành công!')
+                    }
                   }
                 }}
               >

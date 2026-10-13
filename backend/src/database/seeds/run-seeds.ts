@@ -5,7 +5,7 @@ import { User } from '../../entities/user.entity';
 import { Member } from '../../entities/member.entity';
 import { Instructor } from '../../entities/instructor.entity';
 import { Branch } from '../../entities/branch.entity';
-import { Room } from '../../entities/room.entity';
+import { Room, RoomType, RoomStatus } from '../../entities/room.entity';
 import { Equipment } from '../../entities/equipment.entity';
 import { Class, ClassLevel, ClassType } from '../../entities/class.entity';
 import { ClassSchedule, ScheduleStatus } from '../../entities/class-schedule.entity';
@@ -73,19 +73,100 @@ async function runSeeds() {
     });
     branch = await branchRepo.save(branch);
 
-    const room1 = roomRepo.create({
-      branchId: branch.id,
-      name: 'Phòng Reformer Studio',
-      capacity: 8,
-      description: 'Phòng tập nhóm với 8 máy Allegro 2 Reformer hiện đại',
-    });
-    const room2 = roomRepo.create({
-      branchId: branch.id,
-      name: 'Phòng VIP Private & Cadillac',
-      capacity: 2,
-      description: 'Phòng tập 1:1 hoặc 1:2 với Cadillac & Wunda Chair cao cấp',
-    });
-    await roomRepo.save([room1, room2]);
+    const sampleRooms = [
+      {
+        name: 'Phòng VIP 01 - Cadillac Private (1:1)',
+        roomType: RoomType.PRIVATE_1V1,
+        capacity: 1,
+        status: RoomStatus.AVAILABLE,
+        amenities: 'Cadillac Studio cao cấp, Wunda Chair, Gương soi toàn thân',
+        description: 'Phòng tập 1 vs 1 cá nhân hóa cao độ với Huấn luyện viên trưởng.',
+      },
+      {
+        name: 'Phòng Semi-Private 02 (1:2 Duo)',
+        roomType: RoomType.SEMI_PRIVATE_1V2,
+        capacity: 2,
+        status: RoomStatus.AVAILABLE,
+        amenities: '2 máy Reformer, Dây treo kháng lực, Thảm tập cao cấp',
+        description: 'Phòng tập bán cá nhân 2 người, phù hợp tập cùng bạn bè hoặc người thân.',
+      },
+      {
+        name: 'Phòng Mini Studio 03 (1:3)',
+        roomType: RoomType.SMALL_GROUP_1V3,
+        capacity: 3,
+        status: RoomStatus.AVAILABLE,
+        amenities: '3 máy Reformer Allegro, Spine Corrector, Bóng Pilates',
+        description: 'Phòng tập nhóm nhỏ 3 người, giáo viên hướng dẫn tỉ mỉ từng động tác.',
+      },
+      {
+        name: 'Phòng Mini Studio 04 (1:4)',
+        roomType: RoomType.SMALL_GROUP_1V4,
+        capacity: 4,
+        status: RoomStatus.AVAILABLE,
+        amenities: '4 máy Reformer Allegro, Dụng cụ bổ trợ, Loa bluetooth',
+        description: 'Phòng tập nhóm 4 người, tương tác tốt và không khí luyện tập sôi nổi.',
+      },
+      {
+        name: 'Phòng Reformer Studio Lớn',
+        roomType: RoomType.GROUP,
+        capacity: 10,
+        status: RoomStatus.AVAILABLE,
+        amenities: '10 máy Allegro 2 Reformer, Điều hòa 2 chiều, Hệ thống âm thanh vòm',
+        description: 'Phòng tập nhóm quy mô lớn với dàn máy Reformer hiện đại bậc nhất.',
+      },
+    ];
+
+    for (const r of sampleRooms) {
+      const room = roomRepo.create({
+        branchId: branch.id,
+        ...r,
+      });
+      await roomRepo.save(room);
+    }
+  }
+
+  const existingRooms = await roomRepo.find({ where: { branchId: branch.id } });
+  if (existingRooms.length < 5) {
+    const defaultRooms = [
+      {
+        name: 'Phòng VIP 01 - Cadillac Private (1:1)',
+        roomType: RoomType.PRIVATE_1V1,
+        capacity: 1,
+        status: RoomStatus.AVAILABLE,
+        amenities: 'Cadillac Studio cao cấp, Wunda Chair, Gương soi toàn thân',
+        description: 'Phòng tập 1 vs 1 cá nhân hóa cao độ với Huấn luyện viên trưởng.',
+      },
+      {
+        name: 'Phòng Semi-Private 02 (1:2 Duo)',
+        roomType: RoomType.SEMI_PRIVATE_1V2,
+        capacity: 2,
+        status: RoomStatus.AVAILABLE,
+        amenities: '2 máy Reformer, Dây treo kháng lực, Thảm tập cao cấp',
+        description: 'Phòng tập bán cá nhân 2 người, phù hợp tập cùng bạn bè hoặc người thân.',
+      },
+      {
+        name: 'Phòng Mini Studio 03 (1:3)',
+        roomType: RoomType.SMALL_GROUP_1V3,
+        capacity: 3,
+        status: RoomStatus.AVAILABLE,
+        amenities: '3 máy Reformer Allegro, Spine Corrector, Bóng Pilates',
+        description: 'Phòng tập nhóm nhỏ 3 người, giáo viên hướng dẫn tỉ mỉ từng động tác.',
+      },
+      {
+        name: 'Phòng Mini Studio 04 (1:4)',
+        roomType: RoomType.SMALL_GROUP_1V4,
+        capacity: 4,
+        status: RoomStatus.AVAILABLE,
+        amenities: '4 máy Reformer Allegro, Dụng cụ bổ trợ, Loa bluetooth',
+        description: 'Phòng tập nhóm 4 người, tương tác tốt và không khí luyện tập sôi nổi.',
+      },
+    ];
+    for (const r of defaultRooms) {
+      const found = existingRooms.find((er) => er.roomType === r.roomType);
+      if (!found) {
+        await roomRepo.save(roomRepo.create({ branchId: branch.id, ...r }));
+      }
+    }
   }
 
   const rooms = await roomRepo.find({ where: { branchId: branch.id } });

@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Star, Award, Phone, Mail, Edit, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { formatCurrency } from '@/lib/utils'
+import api from '@/lib/axios'
+import toast from 'react-hot-toast'
 
 interface InstructorItem {
   id: string
@@ -59,8 +61,164 @@ const mockInstructors: InstructorItem[] = [
 ]
 
 export default function InstructorsPage() {
-  const [instructors] = useState(mockInstructors)
+  const [instructors, setInstructors] = useState<InstructorItem[]>(mockInstructors)
+  const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingInstructor, setEditingInstructor] = useState<InstructorItem | null>(null)
+
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    hourlyRate: 400000,
+    specializations: 'Reformer, Mat, Cadillac',
+    bio: '',
+  })
+
+  const isUuid = (str: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+  const fetchInstructors = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get('/instructors')
+      const data = res.data?.data || res.data
+      const items = Array.isArray(data) ? data : data?.items || []
+      if (items.length > 0) {
+        const mapped = items.map((ins: any) => ({
+          id: ins.id,
+          name: ins.user?.fullName || ins.name || 'HLV Pilates',
+          email: ins.user?.email || ins.email || 'coach@pilatesms.vn',
+          phone: ins.user?.phone || ins.phone || '0901234567',
+          specializations: ins.specializations || ['Reformer', 'Mat'],
+          bio: ins.bio || 'Huấn luyện viên Pilates chuyên nghiệp tại PilatesMS.',
+          rating: 4.9,
+          totalClasses: 120,
+          hourlyRate: Number(ins.hourlyRate) || 400000,
+          status: ins.user?.isActive === false ? 'inactive' : 'active',
+        }))
+        setInstructors(mapped)
+      }
+    } catch {
+      // fallback
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchInstructors()
+  }, [])
+
+  const handleOpenAdd = () => {
+    setEditingInstructor(null)
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      hourlyRate: 400000,
+      specializations: 'Reformer, Mat, Cadillac',
+      bio: '',
+    })
+    setIsModalOpen(true)
+  }
+
+  const handleOpenEdit = (ins: InstructorItem) => {
+    setEditingInstructor(ins)
+    setFormData({
+      name: ins.name,
+      email: ins.email,
+      phone: ins.phone,
+      hourlyRate: ins.hourlyRate,
+      specializations: ins.specializations.join(', '),
+      bio: ins.bio,
+    })
+    setIsModalOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      toast.error('Vui lòng nhập họ và tên HLV')
+      return
+    }
+
+    const specs = formData.specializations
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    try {
+      if (editingInstructor) {
+        if (isUuid(editingInstructor.id)) {
+          await api.patch(`/instructors/${editingInstructor.id}`, {
+            fullName: formData.name,
+            phone: formData.phone,
+            hourlyRate: Number(formData.hourlyRate),
+            specializations: specs,
+            bio: formData.bio,
+          })
+        }
+        setInstructors((prev) =>
+          prev.map((ins) =>
+            ins.id === editingInstructor.id
+              ? {
+                  ...ins,
+                  name: formData.name,
+                  email: formData.email,
+                  phone: formData.phone,
+                  hourlyRate: Number(formData.hourlyRate),
+                  specializations: specs,
+                  bio: formData.bio,
+                }
+              : ins
+          )
+        )
+        toast.success('Cập nhật thông tin HLV thành công!')
+      } else {
+        let createdId = `ins-${Date.now()}`
+        const res = await api.post('/instructors', {
+          fullName: formData.name,
+          email: formData.email || `coach.${Date.now()}@pilatesms.vn`,
+          phone: formData.phone || undefined,
+          hourlyRate: Number(formData.hourlyRate),
+          specializations: specs,
+          bio: formData.bio,
+        })
+        const saved = res.data?.data || res.data
+        if (saved?.id) createdId = saved.id
+        const newIns: InstructorItem = {
+          id: createdId,
+          name: formData.name,
+          email: formData.email || 'coach@pilatesms.vn',
+          phone: formData.phone || '0901234567',
+          specializations: specs.length > 0 ? specs : ['Reformer'],
+          bio: formData.bio || 'Huấn luyện viên Pilates chuyên nghiệp',
+          rating: 5.0,
+          totalClasses: 0,
+          hourlyRate: Number(formData.hourlyRate),
+          status: 'active',
+        }
+        setInstructors((prev) => [newIns, ...prev])
+        toast.success('Thêm Huấn luyện viên mới thành công!')
+      }
+      setIsModalOpen(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi lưu HLV')
+    }
+  }
+
+  const handleDelete = async (ins: InstructorItem) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa HLV "${ins.name}"?`)) return
+    try {
+      if (isUuid(ins.id)) {
+        await api.delete(`/instructors/${ins.id}`)
+      }
+      setInstructors((prev) => prev.filter((i) => i.id !== ins.id))
+      toast.success('Xóa Huấn luyện viên thành công!')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi xóa HLV')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -71,7 +229,7 @@ export default function InstructorsPage() {
             Quản lý giáo viên, phân bổ lịch dạy và biểu phí thù lao
           </p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2">
+        <Button onClick={handleOpenAdd} className="flex items-center gap-2">
           <Plus className="w-4 h-4" />
           Thêm HLV Mới
         </Button>
@@ -127,11 +285,21 @@ export default function InstructorsPage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-gray-100">
-              <Button variant="outline" size="sm" className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-1"
+                onClick={() => handleOpenEdit(ins)}
+              >
                 <Edit className="w-3.5 h-3.5" />
                 Sửa
               </Button>
-              <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-500 hover:text-red-700"
+                onClick={() => handleDelete(ins)}
+              >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             </div>
@@ -143,39 +311,63 @@ export default function InstructorsPage() {
         <Modal
           open={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title="Thêm Huấn Luyện Viên Mới"
+          title={editingInstructor ? 'Chỉnh Sửa Thông Tin HLV' : 'Thêm Huấn Luyện Viên Mới'}
         >
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">Họ và tên</label>
-              <Input placeholder="Ví dụ: Trần Mai Lan" />
+              <label className="text-sm font-medium text-gray-700 block mb-1">Họ và tên *</label>
+              <Input
+                placeholder="Ví dụ: Trần Mai Lan"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Email</label>
-                <Input type="email" placeholder="coach@pilatesms.vn" />
+                <Input
+                  type="email"
+                  placeholder="coach@pilatesms.vn"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  disabled={!!editingInstructor}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Số điện thoại</label>
-                <Input placeholder="0901234567" />
+                <Input
+                  placeholder="0901234567"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Thù lao theo giờ (VNĐ)</label>
-                <Input type="number" defaultValue={400000} />
+                <Input
+                  type="number"
+                  value={formData.hourlyRate}
+                  onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })}
+                />
               </div>
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Chuyên môn chính</label>
-                <Input placeholder="Reformer, Mat, Trị liệu..." />
+                <label className="text-sm font-medium text-gray-700 block mb-1">Chuyên môn chính (cách nhau bởi dấu phẩy)</label>
+                <Input
+                  placeholder="Reformer, Mat, Trị liệu..."
+                  value={formData.specializations}
+                  onChange={(e) => setFormData({ ...formData, specializations: e.target.value })}
+                />
               </div>
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-1">Tiểu sử & Chứng chỉ</label>
               <textarea
                 className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                rows={2}
+                rows={3}
                 placeholder="Số năm kinh nghiệm, các chứng nhận quốc tế..."
+                value={formData.bio}
+                onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
               />
             </div>
           </div>
@@ -183,7 +375,9 @@ export default function InstructorsPage() {
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>
               Hủy
             </Button>
-            <Button onClick={() => setIsModalOpen(false)}>Lưu HLV</Button>
+            <Button onClick={handleSave}>
+              {editingInstructor ? 'Lưu Thay Đổi' : 'Lưu HLV'}
+            </Button>
           </ModalFooter>
         </Modal>
       )}

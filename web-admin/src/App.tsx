@@ -18,6 +18,8 @@ import SettingsPage from './pages/settings/SettingsPage'
 import TeachingPage from './pages/teaching/TeachingPage'
 import ProductsPage from './pages/products/ProductsPage'
 import UsersPage from './pages/users/UsersPage'
+import RoomsPage from './pages/rooms/RoomsPage'
+import PrivateSessionsPage from './pages/private-sessions/PrivateSessionsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore()
@@ -55,6 +57,8 @@ export default function App() {
           <Route path="members/:id" element={<MemberDetailPage />} />
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="classes" element={<ClassesPage />} />
+          <Route path="rooms" element={<RoomsPage />} />
+          <Route path="private-sessions" element={<PrivateSessionsPage />} />
           <Route path="teaching" element={<TeachingPage />} />
           <Route path="packages" element={<PackagesPage />} />
           <Route path="products" element={<ProductsPage />} />

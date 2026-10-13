@@ -3,10 +3,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EquipmentStatus, EquipmentType } from '../../../common/enums/equipment-status.enum';
 
 export class CreateEquipmentDto {
-  @ApiProperty({ example: 'uuid-branch' })
+  @ApiPropertyOptional({ example: 'uuid-branch' })
   @IsString()
-  @IsNotEmpty()
-  branchId: string;
+  @IsOptional()
+  branchId?: string;
 
   @ApiProperty({ example: 'Máy Reformer số 01' })
   @IsString()

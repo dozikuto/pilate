@@ -111,7 +111,9 @@ export default function SchedulePage() {
     ? rawSchedules
     : (rawSchedules as any)?.data || (rawSchedules as any)?.items || []
 
-  const formattedSchedules = schedulesList.map((s: any) => {
+  const formattedSchedules = schedulesList
+    .filter((s: any) => s.status !== 'cancelled' && s.scheduleStatus !== 'cancelled')
+    .map((s: any) => {
     const startDate = new Date(s.startTime)
     const endDate = new Date(s.endTime)
 

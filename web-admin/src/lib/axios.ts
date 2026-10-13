@@ -67,7 +67,7 @@ api.interceptors.response.use(
                 email: item.user.email || item.email,
                 phone: item.user.phone || item.phone,
                 code: item.qrCode || item.code || `HV-${item.id?.substring(0, 6).toUpperCase()}`,
-                status: item.user.isActive ? 'active' : 'inactive',
+                status: item.status || (item.user.isActive ? 'active' : 'inactive'),
                 currentPackage: activePkg
                   ? {
                       id: activePkg.id,

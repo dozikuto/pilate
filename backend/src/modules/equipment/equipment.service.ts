@@ -32,6 +32,10 @@ export class EquipmentService {
   }
 
   async findOne(id: string) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      throw new NotFoundException(`Equipment #${id} not found`);
+    }
     const eq = await this.equipmentRepository.findOne({
       where: { id },
       relations: ['branch'],
@@ -40,7 +44,13 @@ export class EquipmentService {
     return eq;
   }
 
-  create(dto: CreateEquipmentDto) {
+  async create(dto: CreateEquipmentDto) {
+    if (!dto.branchId) {
+      const branch = await this.equipmentRepository.manager.getRepository('Branch').findOne({ where: {} });
+      if (branch) {
+        dto.branchId = (branch as any).id;
+      }
+    }
     const eq = this.equipmentRepository.create({
       ...dto,
       purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : undefined,
@@ -62,6 +72,10 @@ export class EquipmentService {
   }
 
   async remove(id: string) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return { success: true };
+    }
     await this.findOne(id);
     await this.equipmentRepository.delete(id);
     return { success: true };

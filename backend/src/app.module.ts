@@ -21,6 +21,8 @@ import { TeachingModule } from './modules/teaching/teaching.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { SystemModule } from './modules/system/system.module';
 import { ProductsModule } from './modules/products/products.module';
+import { PrivateSessionsModule } from './modules/private-sessions/private-sessions.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { ProductsModule } from './modules/products/products.module';
     PromotionsModule,
     SystemModule,
     ProductsModule,
+    PrivateSessionsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

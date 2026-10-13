@@ -189,8 +189,6 @@ export default function MyPackagesScreen() {
       const result = await purchaseMutation.mutateAsync({
         packageId: selectedPackage.id,
         voucherCode: appliedPromo?.code,
-        discountAmount,
-        finalAmount,
         paymentMethod,
       });
 
@@ -199,8 +197,8 @@ export default function MyPackagesScreen() {
         totalSessions: selectedPackage.totalSessions,
         durationDays: selectedPackage.durationDays || selectedPackage.validDays || 30,
         originalPrice,
-        discountAmount,
-        finalAmount,
+        discountAmount: Number(result.discountAmount),
+        finalAmount: Number(result.finalAmount),
         paymentMethod,
         expiryDate: result?.expiryDate,
         transactionId: result?.transactionId,
@@ -991,10 +989,10 @@ export default function MyPackagesScreen() {
               </View>
 
               <Text className="text-2xl font-bold text-gray-900 text-center">
-                Mua gói tập thành công!
+                Đã tạo yêu cầu mua gói
               </Text>
               <Text className="text-sm text-gray-500 text-center mt-1 mb-6">
-                Gói tập đã được kích hoạt vào tài khoản của bạn.
+                Gói tập sẽ được kích hoạt sau khi phòng tập xác nhận thanh toán.
               </Text>
 
               <View className="w-full bg-white rounded-2xl p-5 border border-gray-200 shadow-sm mb-8 space-y-3">
@@ -1006,7 +1004,7 @@ export default function MyPackagesScreen() {
                 </View>
 
                 <View className="flex-row justify-between pb-2 border-b border-gray-100">
-                  <Text className="text-sm text-gray-500">Số buổi được cấp:</Text>
+                  <Text className="text-sm text-gray-500">Số buổi sau khi kích hoạt:</Text>
                   <Text className="text-sm font-bold text-gray-900">
                     {lastPurchaseResult.totalSessions} buổi
                   </Text>

@@ -17,6 +17,8 @@ import {
   GraduationCap,
   ShoppingBag,
   Shield,
+  DoorOpen,
+  CalendarClock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -31,6 +33,8 @@ const navItems: NavItem[] = [
   { label: 'Học viên', path: '/members', icon: <Users size={20} /> },
   { label: 'Lịch học', path: '/schedule', icon: <Calendar size={20} /> },
   { label: 'Lớp học', path: '/classes', icon: <BookOpen size={20} /> },
+  { label: 'Phòng tập', path: '/rooms', icon: <DoorOpen size={20} /> },
+  { label: 'Đề nghị tập riêng', path: '/private-sessions', icon: <CalendarClock size={20} /> },
   { label: 'Giảng dạy & HLV', path: '/teaching', icon: <GraduationCap size={20} /> },
   { label: 'Gói tập', path: '/packages', icon: <Package size={20} /> },
   { label: 'Cửa hàng & Sp', path: '/products', icon: <ShoppingBag size={20} /> },

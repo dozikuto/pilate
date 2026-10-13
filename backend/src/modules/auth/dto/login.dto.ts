@@ -31,6 +31,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({ example: 'Password@123' })
+  @IsOptional()
+  @IsString()
+  confirmPassword?: string;
 }
 
 export class RefreshTokenDto {

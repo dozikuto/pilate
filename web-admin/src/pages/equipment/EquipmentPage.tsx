@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus, Wrench, CheckCircle2, AlertTriangle, XCircle, Calendar,
-  Hash, Bell, Send, Check, ShieldAlert
+  Hash, Bell, Send, Check, ShieldAlert, Loader2
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
+import api from '@/lib/axios'
+import toast from 'react-hot-toast'
 
 interface EqItem {
   id: string
@@ -196,8 +198,35 @@ export default function EquipmentPage() {
     }
   }
 
-  const handleAddEquipment = () => {
-    if (!form.name || !form.serialNumber) return
+  useEffect(() => {
+    api.get('/equipment')
+      .then((res) => {
+        const data = res.data?.data || res.data
+        const items = Array.isArray(data) ? data : data?.items || []
+        if (items.length > 0) {
+          setEquipment(
+            items.map((eq: any) => ({
+              id: eq.id,
+              name: eq.name,
+              type: eq.type ? (eq.type.charAt(0).toUpperCase() + eq.type.slice(1)) : 'Reformer',
+              serialNumber: eq.serialNumber || 'REF-2024-001',
+              roomName: eq.branch?.name || 'Phòng Reformer 1',
+              status: eq.status || 'available',
+              purchaseDate: eq.purchaseDate ? eq.purchaseDate.split('T')[0] : '2024-01-10',
+              lastMaintenance: eq.lastMaintenanceDate ? eq.lastMaintenanceDate.split('T')[0] : '2024-06-10',
+              nextMaintenance: eq.nextMaintenanceDate ? eq.nextMaintenanceDate.split('T')[0] : '2024-12-10',
+            }))
+          )
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleAddEquipment = async () => {
+    if (!form.name || !form.serialNumber) {
+      toast.error('Vui lòng nhập tên thiết bị và mã seri')
+      return
+    }
     const newItem: EqItem = {
       id: `e-${Date.now()}`,
       name: form.name,
@@ -209,12 +238,31 @@ export default function EquipmentPage() {
       lastMaintenance: new Date().toISOString().split('T')[0],
       nextMaintenance: form.nextMaintenance || '2027-01-01',
     }
+    try {
+      const res = await api.post('/equipment', {
+        name: form.name,
+        type: form.type as any,
+        serialNumber: form.serialNumber,
+        status: form.status,
+        purchaseDate: form.purchaseDate || new Date().toISOString().split('T')[0],
+        nextMaintenanceDate: form.nextMaintenance || '2027-01-01',
+      })
+      const saved = res.data?.data || res.data
+      if (saved?.id) newItem.id = saved.id
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không lưu được thiết bị vào hệ thống')
+      return
+    }
     setEquipment([newItem, ...equipment])
     setIsModalOpen(false)
+    toast.success('Đã lưu thiết bị mới thành công!')
   }
 
-  const handleCreateMaintenance = () => {
-    if (!maintenanceForm.equipmentId || !maintenanceForm.scheduledDate) return
+  const handleCreateMaintenance = async () => {
+    if (!maintenanceForm.equipmentId || !maintenanceForm.scheduledDate) {
+      toast.error('Vui lòng chọn thiết bị và ngày bảo trì')
+      return
+    }
     const selectedEq = equipment.find((e) => e.id === maintenanceForm.equipmentId)
     const newSchedule: MaintenanceSchedule = {
       id: `ms-${Date.now()}`,
@@ -227,19 +275,48 @@ export default function EquipmentPage() {
       notificationSent: false,
     }
     setSchedules([newSchedule, ...schedules])
-    
     setEquipment(equipment.map(e => e.id === maintenanceForm.equipmentId ? { ...e, status: 'maintenance' } : e))
+    try {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(maintenanceForm.equipmentId)) {
+        await api.patch(`/equipment/${maintenanceForm.equipmentId}`, {
+          status: 'maintenance',
+          nextMaintenanceDate: maintenanceForm.scheduledDate,
+        })
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không lưu được lịch bảo trì vào hệ thống')
+      return
+    }
     setIsMaintenanceModalOpen(false)
     setMaintenanceForm({ equipmentId: '', scheduledDate: '', technician: '', description: '' })
+    toast.success('Đã lên lịch bảo trì thiết bị thành công!')
   }
 
-  const handleSendNotification = (scheduleId: string) => {
-    setSchedules(
-      schedules.map((s) => (s.id === scheduleId ? { ...s, notificationSent: true } : s))
-    )
+  const [sendingNoticeId, setSendingNoticeId] = useState<string | null>(null)
+
+  const handleSendNotification = async (scheduleId: string) => {
     const sch = schedules.find((s) => s.id === scheduleId)
-    setNoticeMessage(`Đã phát thông báo bảo trì thành công cho ${sch?.equipmentName} đến toàn thể lễ tân và HLV!`)
-    setTimeout(() => setNoticeMessage(null), 4000)
+    if (!sch) return
+
+    setSendingNoticeId(scheduleId)
+    try {
+      await api.post('/notifications/broadcast', {
+        title: `[Thông Báo Bảo Trì Thiết Bị] ${sch.equipmentName}`,
+        message: `Kính gửi Bộ phận Lễ tân, Huấn luyện viên và Hội viên: Thiết bị ${sch.equipmentName} (${sch.description || 'Bảo dưỡng định kỳ'}) sẽ được tiến hành bảo dưỡng vào ngày ${sch.scheduledDate}. Vui lòng sắp xếp và điều phối phòng tập phù hợp.`,
+        equipmentName: sch.equipmentName,
+      })
+
+      setSchedules(
+        schedules.map((s) => (s.id === scheduleId ? { ...s, notificationSent: true } : s))
+      )
+      toast.success(`Đã phát thông báo bảo trì thành công tới Lễ tân, Huấn luyện viên và Học viên!`)
+      setNoticeMessage(`Đã phát thông báo bảo trì thành công cho ${sch.equipmentName} đến toàn thể Lễ tân, HLV và học viên!`)
+      setTimeout(() => setNoticeMessage(null), 5000)
+    } catch {
+      toast.error('Gửi thông báo thất bại, vui lòng thử lại!')
+    } finally {
+      setSendingNoticeId(null)
+    }
   }
 
   return (
@@ -427,10 +504,16 @@ export default function EquipmentPage() {
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={sendingNoticeId === sch.id}
                             onClick={() => handleSendNotification(sch.id)}
                             className="text-xs flex items-center gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50 ml-auto"
                           >
-                            <Send className="w-3.5 h-3.5" /> Phát Thông Báo
+                            {sendingNoticeId === sch.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Send className="w-3.5 h-3.5" />
+                            )}
+                            Phát Thông Báo
                           </Button>
                         )}
                       </td>

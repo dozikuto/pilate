@@ -36,4 +36,11 @@ export class ReportsController {
   getMembers() {
     return this.reportsService.getMemberReport();
   }
+
+  @Get('yearly')
+  @ApiOperation({ summary: 'Get full yearly analytics report by year' })
+  @ApiQuery({ name: 'year', required: false, example: '2026' })
+  getYearlyReport(@Query('year') year?: string) {
+    return this.reportsService.getYearlyReport(year);
+  }
 }

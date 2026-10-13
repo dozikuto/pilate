@@ -1,26 +1,37 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
-import * as bcrypt from 'bcrypt';
-import * as QRCode from 'qrcode';
-import { Member } from '../../entities/member.entity';
-import { User } from '../../entities/user.entity';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { CreateMemberDto, UpdateMemberDto } from './dto/create-member.dto';
-import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
-import { MemberPackage, MemberPackageStatus } from '../../entities/member-package.entity';
-import { Package } from '../../entities/package.entity';
-import { Booking } from '../../entities/booking.entity';
-import { CheckIn } from '../../entities/check-in.entity';
-import { Transaction } from '../../entities/transaction.entity';
-import { BookingStatus } from '../../common/enums/booking-status.enum';
-import { PaymentMethod } from '../../common/enums/payment-method.enum';
-import { PaymentStatus } from '../../common/enums/payment-status.enum';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository, Like } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
+import * as bcrypt from "bcrypt";
+import * as QRCode from "qrcode";
+import { Member } from "../../entities/member.entity";
+import { User } from "../../entities/user.entity";
+import { UserRole } from "../../common/enums/user-role.enum";
+import { CreateMemberDto, UpdateMemberDto } from "./dto/create-member.dto";
+import { PaginationDto, paginate } from "../../common/dto/pagination.dto";
+import {
+  MemberPackage,
+  MemberPackageStatus,
+} from "../../entities/member-package.entity";
+import { Package } from "../../entities/package.entity";
+import { Booking } from "../../entities/booking.entity";
+import { CheckIn } from "../../entities/check-in.entity";
+import { Transaction } from "../../entities/transaction.entity";
+import { BookingStatus } from "../../common/enums/booking-status.enum";
+import { PaymentMethod } from "../../common/enums/payment-method.enum";
+import { PaymentStatus } from "../../common/enums/payment-status.enum";
+import { PromotionsService } from "../promotions/promotions.service";
+import { Branch } from "../../entities/branch.entity";
 
 @Injectable()
 export class MembersService {
   constructor(
+    private readonly promotionsService: PromotionsService,
     @InjectRepository(Member)
     private membersRepository: Repository<Member>,
     @InjectRepository(User)
@@ -37,40 +48,141 @@ export class MembersService {
     private transactionsRepository: Repository<Transaction>,
   ) {}
 
-  async findAll(pagination: PaginationDto) {
+  async findAll(pagination: PaginationDto, status?: string) {
     const qb = this.membersRepository
-      .createQueryBuilder('member')
-      .leftJoinAndSelect('member.user', 'user')
-      .leftJoinAndSelect('member.memberPackages', 'memberPackages')
-      .leftJoinAndSelect('memberPackages.package', 'package');
+      .createQueryBuilder("member")
+      .leftJoinAndSelect("member.user", "user")
+      .leftJoinAndSelect("member.memberPackages", "memberPackages")
+      .leftJoinAndSelect("memberPackages.package", "package");
 
     if (pagination.search) {
-      qb.where(
-        'user.fullName ILIKE :search OR user.email ILIKE :search OR user.phone ILIKE :search',
+      qb.andWhere(
+        "(user.fullName ILIKE :search OR user.email ILIKE :search OR user.phone ILIKE :search)",
         { search: `%${pagination.search}%` },
       );
     }
 
+    if (status === "inactive") {
+      qb.andWhere("user.isActive = :isActive", { isActive: false });
+    } else if (status === "active") {
+      // Hoạt động: tài khoản mở và (có gói đang hoạt động HOẶC chưa mua gói nào)
+      qb.andWhere("user.isActive = :isActive", { isActive: true });
+      qb.andWhere(`(
+        EXISTS (SELECT 1 FROM member_packages mp WHERE mp.member_id = member.id AND mp.status = 'active' AND (mp.expiry_date IS NULL OR mp.expiry_date >= CURRENT_DATE))
+        OR NOT EXISTS (SELECT 1 FROM member_packages mp WHERE mp.member_id = member.id)
+      )`);
+    } else if (status === "expired") {
+      // Hết hạn: tài khoản mở, đã từng mua gói nhưng không còn gói nào đang hoạt động
+      qb.andWhere("user.isActive = :isActive", { isActive: true });
+      qb.andWhere(
+        `EXISTS (SELECT 1 FROM member_packages mp WHERE mp.member_id = member.id)`,
+      );
+      qb.andWhere(`NOT EXISTS (
+        SELECT 1 FROM member_packages mp
+        WHERE mp.member_id = member.id AND mp.status = 'active' AND (mp.expiry_date IS NULL OR mp.expiry_date >= CURRENT_DATE)
+      )`);
+    }
+
     qb.skip(pagination.skip)
       .take(pagination.limit)
-      .orderBy(`member.${pagination.sort || 'createdAt'}`, pagination.order || 'DESC');
+      .orderBy(
+        `member.${pagination.sort || "createdAt"}`,
+        pagination.order || "DESC",
+      );
 
     const [items, total] = await qb.getManyAndCount();
-    return paginate(items, total, pagination);
+
+    const mappedItems = items.map((m) => {
+      const activePackages =
+        m.memberPackages?.filter(
+          (p) =>
+            p.status === MemberPackageStatus.ACTIVE &&
+            (!p.expiryDate ||
+              new Date(p.expiryDate).getTime() + 86400000 > Date.now()),
+        ) || [];
+      const latestPackage = m.memberPackages?.[0];
+      const totalRemaining =
+        m.memberPackages?.reduce(
+          (sum, p) => sum + (p.remainingSessions || 0),
+          0,
+        ) || 0;
+      const totalSessions =
+        m.memberPackages?.reduce(
+          (sum, p) => sum + (p.package?.totalSessions || 0),
+          0,
+        ) || (m.memberPackages && m.memberPackages.length > 0 ? 10 : 0);
+      const usedSessions = Math.max(0, totalSessions - totalRemaining);
+
+      const isMemberActive = m.user?.isActive !== false;
+      const hasActivePkg = activePackages.length > 0;
+      let memberStatus: "active" | "inactive" | "expired" = "active";
+
+      if (!isMemberActive) {
+        memberStatus = "inactive";
+      } else if (
+        m.memberPackages &&
+        m.memberPackages.length > 0 &&
+        !hasActivePkg
+      ) {
+        memberStatus = "expired";
+      } else {
+        memberStatus = "active";
+      }
+
+      return {
+        id: m.id,
+        code: m.qrCode || `HV${m.id.substring(0, 5).toUpperCase()}`,
+        name: m.user?.fullName || "Học viên Pilates",
+        phone: m.user?.phone || "",
+        email: m.user?.email || "",
+        dateOfBirth: m.dateOfBirth,
+        gender: m.gender,
+        emergencyContact: m.emergencyContactName,
+        emergencyPhone: m.emergencyContactPhone,
+        healthNotes: m.healthNotes,
+        joinDate: m.createdAt,
+        status: memberStatus,
+        totalSessions: totalSessions || 10,
+        usedSessions: usedSessions,
+        remainingSessions: totalRemaining,
+        currentPackage: latestPackage
+          ? {
+              id: latestPackage.id,
+              memberId: m.id,
+              packageId: latestPackage.packageId,
+              packageName: latestPackage.package?.name || "Gói tập Pilates",
+              packageType: latestPackage.package?.type || "session",
+              totalSessions: latestPackage.package?.totalSessions || 10,
+              usedSessions: Math.max(
+                0,
+                (latestPackage.package?.totalSessions || 10) -
+                  (latestPackage.remainingSessions || 0),
+              ),
+              remainingSessions: latestPackage.remainingSessions || 0,
+              status: latestPackage.status,
+            }
+          : undefined,
+        createdAt: m.createdAt,
+        updatedAt: m.updatedAt,
+        user: m.user,
+      };
+    });
+
+    return paginate(mappedItems, total, pagination);
   }
 
   async findOne(id: string) {
     const member = await this.membersRepository.findOne({
       where: { id },
       relations: [
-        'user',
-        'memberPackages',
-        'memberPackages.package',
-        'bookings',
-        'bookings.schedule',
-        'bookings.schedule.class',
-        'bookings.schedule.instructor',
-        'checkIns',
+        "user",
+        "memberPackages",
+        "memberPackages.package",
+        "bookings",
+        "bookings.schedule",
+        "bookings.schedule.class",
+        "bookings.schedule.instructor",
+        "checkIns",
       ],
     });
 
@@ -83,7 +195,7 @@ export class MembersService {
   async findByUserId(userId: string) {
     const member = await this.membersRepository.findOne({
       where: { userId },
-      relations: ['user', 'memberPackages', 'memberPackages.package'],
+      relations: ["user", "memberPackages", "memberPackages.package"],
     });
     if (!member) {
       throw new NotFoundException(`Member with user ID ${userId} not found`);
@@ -92,12 +204,14 @@ export class MembersService {
   }
 
   async create(dto: CreateMemberDto) {
-    const existingUser = await this.usersRepository.findOne({ where: { email: dto.email } });
+    const existingUser = await this.usersRepository.findOne({
+      where: { email: dto.email },
+    });
     if (existingUser) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException("Email already registered");
     }
 
-    const defaultPassword = 'Member@123';
+    const defaultPassword = "Member@123";
     const passwordHash = await bcrypt.hash(defaultPassword, 12);
 
     const user = this.usersRepository.create({
@@ -138,8 +252,12 @@ export class MembersService {
     await this.membersRepository.update(id, {
       ...(dto.dateOfBirth && { dateOfBirth: new Date(dto.dateOfBirth) }),
       ...(dto.gender && { gender: dto.gender }),
-      ...(dto.emergencyContactName !== undefined && { emergencyContactName: dto.emergencyContactName }),
-      ...(dto.emergencyContactPhone !== undefined && { emergencyContactPhone: dto.emergencyContactPhone }),
+      ...(dto.emergencyContactName !== undefined && {
+        emergencyContactName: dto.emergencyContactName,
+      }),
+      ...(dto.emergencyContactPhone !== undefined && {
+        emergencyContactPhone: dto.emergencyContactPhone,
+      }),
       ...(dto.healthNotes !== undefined && { healthNotes: dto.healthNotes }),
       ...(dto.goals !== undefined && { goals: dto.goals }),
     });
@@ -150,7 +268,7 @@ export class MembersService {
   async remove(id: string) {
     const member = await this.findOne(id);
     await this.usersRepository.update(member.userId, { isActive: false });
-    return { success: true, message: 'Member deactivated successfully' };
+    return { success: true, message: "Member deactivated successfully" };
   }
 
   async getQrCodeImage(id: string) {
@@ -168,34 +286,40 @@ export class MembersService {
     const member = await this.findByUserId(userId);
     const memberPackages = await this.memberPackagesRepository.find({
       where: { memberId: member.id },
-      relations: ['package'],
-      order: { createdAt: 'DESC' },
+      relations: ["package"],
+      order: { createdAt: "DESC" },
     });
 
     return memberPackages.map((mp) => {
       const totalSessions = mp.package?.totalSessions ?? 10;
       const remainingSessions = mp.remainingSessions ?? 0;
-      const expiryIso = mp.expiryDate ? new Date(mp.expiryDate).toISOString() : null;
+      const expiryIso = mp.expiryDate
+        ? new Date(mp.expiryDate).toISOString()
+        : null;
       return {
         id: mp.id,
         memberId: mp.memberId,
         packageId: mp.packageId,
-        packageName: mp.package?.name ?? 'Gói tập Pilates',
-        packageType: mp.package?.type ?? 'session_based',
+        packageName: mp.package?.name ?? "Gói tập Pilates",
+        packageType: mp.package?.type ?? "session_based",
         package: {
           id: mp.package?.id ?? mp.packageId,
-          name: mp.package?.name ?? 'Gói tập Pilates',
-          description: mp.package?.description ?? 'Gói tập Pilates tiêu chuẩn',
+          name: mp.package?.name ?? "Gói tập Pilates",
+          description: mp.package?.description ?? "Gói tập Pilates tiêu chuẩn",
           totalSessions,
           validDays: mp.package?.durationDays ?? 30,
           price: Number(mp.package?.price) || 0,
-          category: mp.package?.type ?? 'session_based',
+          category: mp.package?.type ?? "session_based",
         },
         totalSessions,
         remainingSessions,
         usedSessions: Math.max(0, totalSessions - remainingSessions),
-        startDate: mp.startDate ? new Date(mp.startDate).toISOString() : new Date().toISOString(),
-        purchaseDate: mp.createdAt ? new Date(mp.createdAt).toISOString() : new Date().toISOString(),
+        startDate: mp.startDate
+          ? new Date(mp.startDate).toISOString()
+          : new Date().toISOString(),
+        purchaseDate: mp.createdAt
+          ? new Date(mp.createdAt).toISOString()
+          : new Date().toISOString(),
         expiryDate: expiryIso,
         expiresAt: expiryIso,
         price: Number(mp.package?.price) || 0,
@@ -206,61 +330,78 @@ export class MembersService {
 
   async purchasePackage(
     userId: string,
-    payload: string | { packageId: string; voucherCode?: string; paymentMethod?: PaymentMethod; discountAmount?: number; finalAmount?: number },
+    payload:
+      | string
+      | {
+          packageId: string;
+          voucherCode?: string;
+          paymentMethod?: PaymentMethod;
+          discountAmount?: number;
+          finalAmount?: number;
+        },
   ) {
-    const packageId = typeof payload === 'string' ? payload : payload.packageId;
+    const packageId =
+      typeof payload === "string" ? payload : payload?.packageId;
+    if (!/^[a-f0-9-]{36}$/i.test(packageId || ""))
+      throw new BadRequestException("Gói không hợp lệ");
     const member = await this.findByUserId(userId);
-    const pkg = await this.packagesRepository.findOne({ where: { id: packageId } });
-    if (!pkg) {
-      throw new NotFoundException('Gói tập không tồn tại');
-    }
-
-    const durationDays = pkg.durationDays || 30;
-    const startDate = new Date();
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + durationDays);
-
-    const originalPrice = Number(pkg.price) || 0;
-    const discount = typeof payload === 'object' && payload.discountAmount ? Number(payload.discountAmount) : 0;
-    const finalAmount = typeof payload === 'object' && payload.finalAmount ? Number(payload.finalAmount) : Math.max(0, originalPrice - discount);
-    const voucherCode = typeof payload === 'object' ? payload.voucherCode : null;
-    const paymentMethod = typeof payload === 'object' && payload.paymentMethod ? payload.paymentMethod : PaymentMethod.BANK_TRANSFER;
-
-    const transaction = this.transactionsRepository.create({
-      memberId: member.id,
-      amount: originalPrice,
-      discountAmount: discount,
-      finalAmount: finalAmount,
-      paymentMethod,
-      paymentStatus: PaymentStatus.COMPLETED,
-      voucherCode: voucherCode || null,
-      referenceCode: `PAY-${Date.now().toString(36).toUpperCase()}`,
-      branchId: member.user?.branchId || 'f83678c4-a308-4119-9427-7a70de3a4b66',
-      notes: `Thanh toán mua gói ${pkg.name}`,
+    const pkg = await this.packagesRepository.findOneBy({
+      id: packageId,
+      isActive: true,
     });
-    const savedTx = await this.transactionsRepository.save(transaction);
-
-    const memberPackage = this.memberPackagesRepository.create({
-      memberId: member.id,
-      packageId: pkg.id,
-      transactionId: savedTx.id,
-      remainingSessions: pkg.totalSessions ?? 10,
-      startDate,
-      expiryDate,
-      status: MemberPackageStatus.ACTIVE,
-    });
-
-    const saved = await this.memberPackagesRepository.save(memberPackage);
+    if (!pkg)
+      throw new NotFoundException(
+        "Gói tập không tồn tại hoặc đã ngừng hoạt động",
+      );
+    const originalPrice = Number(pkg.price);
+    const voucherCode =
+      typeof payload === "object" ? payload.voucherCode : undefined;
+    const promotion = voucherCode
+      ? await this.promotionsService.applyPromotion({
+          code: voucherCode,
+          orderAmount: originalPrice,
+        })
+      : undefined;
+    const discount = promotion?.discountAmount || 0;
+    const finalAmount = promotion?.finalAmount ?? originalPrice;
+    const paymentMethod =
+      typeof payload === "object" && payload.paymentMethod
+        ? payload.paymentMethod
+        : PaymentMethod.BANK_TRANSFER;
+    if (!Object.values(PaymentMethod).includes(paymentMethod))
+      throw new BadRequestException("Phương thức thanh toán không hợp lệ");
+    const branch = member.user.branchId
+      ? { id: member.user.branchId }
+      : await this.transactionsRepository.manager
+          .getRepository(Branch)
+          .findOneBy({ isActive: true });
+    if (!branch) throw new BadRequestException("Chưa có chi nhánh hoạt động");
+    const tx = await this.transactionsRepository.save(
+      this.transactionsRepository.create({
+        memberId: member.id,
+        packageId: pkg.id,
+        amount: originalPrice,
+        discountAmount: discount,
+        finalAmount,
+        paymentMethod,
+        paymentStatus: PaymentStatus.PENDING,
+        voucherCode: promotion?.code || null,
+        referenceCode: "PAY-" + uuidv4(),
+        branchId: branch.id,
+        notes: "Chờ xác nhận thanh toán mua gói " + pkg.name,
+      }),
+    );
+    // Browser requests cannot confirm money received; only staff/provider confirmation grants the package.
     return {
-      id: saved.id,
+      id: tx.id,
       packageName: pkg.name,
-      remainingSessions: saved.remainingSessions,
-      expiryDate: saved.expiryDate,
-      status: saved.status,
-      transactionId: savedTx.id,
+      remainingSessions: 0,
+      expiryDate: null,
+      status: "pending",
+      transactionId: tx.id,
       finalAmount,
       discountAmount: discount,
-      voucherCode,
+      voucherCode: promotion?.code || null,
     };
   }
 
@@ -268,7 +409,7 @@ export class MembersService {
     const member = await this.findByUserId(userId);
     const memberPackages = await this.memberPackagesRepository.find({
       where: { memberId: member.id, status: MemberPackageStatus.ACTIVE },
-      relations: ['package'],
+      relations: ["package"],
     });
 
     const remainingSessions = memberPackages.reduce(
@@ -291,8 +432,13 @@ export class MembersService {
         memberId: member.id,
         status: BookingStatus.CONFIRMED,
       },
-      relations: ['schedule', 'schedule.class', 'schedule.instructor', 'schedule.room'],
-      order: { bookedAt: 'DESC' },
+      relations: [
+        "schedule",
+        "schedule.class",
+        "schedule.instructor",
+        "schedule.room",
+      ],
+      order: { bookedAt: "DESC" },
     });
 
     return {
@@ -302,11 +448,12 @@ export class MembersService {
       nextClass: nextBooking?.schedule
         ? {
             id: nextBooking.schedule.id,
-            className: nextBooking.schedule.class?.name ?? 'Lớp Pilates',
+            className: nextBooking.schedule.class?.name ?? "Lớp Pilates",
             startTime: new Date(nextBooking.schedule.startTime).toISOString(),
             endTime: new Date(nextBooking.schedule.endTime).toISOString(),
-            instructorName: nextBooking.schedule.instructor?.fullName ?? 'HLV Pilates',
-            room: nextBooking.schedule.room?.name ?? 'Phòng tập',
+            instructorName:
+              nextBooking.schedule.instructor?.fullName ?? "HLV Pilates",
+            room: nextBooking.schedule.room?.name ?? "Phòng tập",
           }
         : null,
     };
@@ -316,17 +463,59 @@ export class MembersService {
     const member = await this.findByUserId(userId);
     const checkIns = await this.checkInsRepository.find({
       where: { memberId: member.id },
-      relations: ['schedule', 'schedule.class', 'schedule.instructor'],
-      order: { checkInTime: 'DESC' },
+      relations: ["schedule", "schedule.class", "schedule.instructor"],
+      order: { checkInTime: "DESC" },
       take: limit,
     });
 
     return checkIns.map((ci) => ({
       id: ci.id,
-      checkInTime: ci.checkInTime ? new Date(ci.checkInTime).toISOString() : new Date(ci.createdAt).toISOString(),
+      checkInTime: ci.checkInTime
+        ? new Date(ci.checkInTime).toISOString()
+        : new Date(ci.createdAt).toISOString(),
       method: ci.method,
-      className: ci.schedule?.class?.name ?? 'Buổi tập Reformer',
-      instructorName: ci.schedule?.instructor?.fullName ?? 'HLV PilatesMS',
+      className: ci.schedule?.class?.name ?? "Buổi tập Reformer",
+      instructorName: ci.schedule?.instructor?.fullName ?? "HLV PilatesMS",
     }));
+  }
+
+  async updateProfileByUserId(userId: string, data: any) {
+    const member = await this.findByUserId(userId);
+    if (data.fullName || data.phone) {
+      await this.usersRepository.update(userId, {
+        ...(data.fullName && { fullName: data.fullName }),
+        ...(data.phone && { phone: data.phone }),
+      });
+    }
+
+    const updateMemberData: any = {};
+    if (data.healthNotes || data.healthNote) {
+      updateMemberData.healthNotes = data.healthNotes || data.healthNote;
+    }
+    if (data.dateOfBirth)
+      updateMemberData.dateOfBirth = new Date(data.dateOfBirth);
+    if (data.gender) updateMemberData.gender = data.gender;
+    if (data.emergencyContactName)
+      updateMemberData.emergencyContactName = data.emergencyContactName;
+    if (data.emergencyContactPhone)
+      updateMemberData.emergencyContactPhone = data.emergencyContactPhone;
+
+    if (Object.keys(updateMemberData).length > 0) {
+      await this.membersRepository.update(member.id, updateMemberData);
+    }
+
+    const updated = await this.findByUserId(userId);
+    return {
+      id: updated.id,
+      userId: updated.userId,
+      fullName: updated.user?.fullName,
+      email: updated.user?.email,
+      phone: updated.user?.phone,
+      healthNote: updated.healthNotes,
+      healthNotes: updated.healthNotes,
+      dateOfBirth: updated.dateOfBirth,
+      gender: updated.gender,
+      qrCode: updated.qrCode,
+    };
   }
 }

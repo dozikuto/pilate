@@ -17,6 +17,7 @@ export class ReviewsService {
       userId,
       targetType: dto.targetType,
       targetId: dto.targetId,
+      targetName: dto.targetName,
       scheduleId: dto.scheduleId,
       rating: dto.rating,
       comment: dto.comment,

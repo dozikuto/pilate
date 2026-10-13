@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
 import { formatCurrency } from '@/lib/utils'
 import { api } from '@/lib/axios'
+import toast from 'react-hot-toast'
 
 interface ProductItem {
   id: string
@@ -112,16 +113,31 @@ export default function ProductsPage() {
   const [selectedStockProduct, setSelectedStockProduct] = useState<ProductItem | null>(null)
   const [stockChange, setStockChange] = useState(10)
 
+  const isUuid = (str: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
   useEffect(() => {
     api.get('/products')
       .then((res) => {
-        if (Array.isArray(res.data?.data) && res.data.data.length > 0) {
-          setProducts(res.data.data)
+        const payload = res.data?.data ?? res.data
+        const items = Array.isArray(payload) ? payload : (payload?.items ?? [])
+        if (items.length > 0) {
+          setProducts(
+            items.map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              sku: p.sku || `SKU-${p.id.slice(0, 4)}`,
+              category: p.category || 'equipment',
+              price: Number(p.price) || 0,
+              stockQuantity: Number(p.stockQuantity) || 0,
+              unit: p.unit || 'chiếc',
+              description: p.description || '',
+              isActive: p.isActive !== false,
+            }))
+          )
         }
       })
-      .catch(() => {
-        
-      })
+      .catch(() => {})
   }, [])
 
   const filteredProducts = products.filter((p) => {
@@ -176,54 +192,80 @@ export default function ProductsPage() {
   }
 
   const handleSave = async () => {
-    if (!formData.name) return
-
-    if (editingProduct) {
-      
-      const updated = products.map((p) =>
-        p.id === editingProduct.id
-          ? { ...p, ...formData }
-          : p
-      )
-      setProducts(updated)
-      try {
-        await api.patch(`/products/${editingProduct.id}`, formData)
-      } catch (e) {}
-    } else {
-      
-      const newProduct: ProductItem = {
-        id: `p-${Date.now()}`,
-        ...formData,
-        isActive: true,
-      }
-      setProducts([newProduct, ...products])
-      try {
-        await api.post('/products', formData)
-      } catch (e) {}
+    if (!formData.name.trim()) {
+      toast.error('Vui lòng nhập tên sản phẩm')
+      return
     }
 
-    setIsModalOpen(false)
+    const payload = {
+      name: formData.name,
+      sku: formData.sku,
+      category: formData.category,
+      price: Number(formData.price),
+      stockQuantity: Number(formData.stockQuantity),
+      unit: formData.unit,
+      description: formData.description,
+      isActive: true,
+    }
+
+    try {
+      if (editingProduct) {
+        if (isUuid(editingProduct.id)) {
+          await api.patch(`/products/${editingProduct.id}`, payload)
+        }
+        setProducts(
+          products.map((p) =>
+            p.id === editingProduct.id ? { ...p, ...payload } : p
+          )
+        )
+        toast.success('Cập nhật sản phẩm thành công!')
+      } else {
+        let createdId = `p-${Date.now()}`
+        const res = await api.post('/products', { ...payload, sku: payload.sku || undefined })
+        const saved = res.data?.data || res.data
+        if (saved?.id) createdId = saved.id
+        const newProduct: ProductItem = {
+          id: createdId,
+          ...payload,
+        }
+        setProducts([newProduct, ...products])
+        toast.success('Thêm sản phẩm mới thành công!')
+      }
+      setIsModalOpen(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi lưu sản phẩm')
+    }
   }
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Bạn có chắc muốn ngừng bán sản phẩm này?')) return
-    setProducts(products.filter((p) => p.id !== id))
     try {
-      await api.delete(`/products/${id}`)
-    } catch (e) {}
+      if (isUuid(id)) {
+        await api.delete(`/products/${id}`)
+      }
+      setProducts(products.filter((p) => p.id !== id))
+      toast.success('Xóa sản phẩm thành công!')
+    } catch {
+      toast.error('Không thể xóa sản phẩm lúc này')
+    }
   }
 
   const handleUpdateStock = async () => {
     if (!selectedStockProduct) return
     const newQty = Math.max(0, selectedStockProduct.stockQuantity + Number(stockChange))
-    setProducts(
-      products.map((p) =>
-        p.id === selectedStockProduct.id ? { ...p, stockQuantity: newQty } : p
-      )
-    )
     try {
-      await api.patch(`/products/${selectedStockProduct.id}/stock`, { change: stockChange })
-    } catch (e) {}
+      if (isUuid(selectedStockProduct.id)) {
+        await api.patch(`/products/${selectedStockProduct.id}/stock`, { change: Number(stockChange) })
+      }
+      setProducts(
+        products.map((p) =>
+          p.id === selectedStockProduct.id ? { ...p, stockQuantity: newQty } : p
+        )
+      )
+      toast.success('Cập nhật số lượng tồn kho thành công!')
+    } catch {
+      toast.error('Không thể cập nhật số lượng tồn kho')
+    }
     setIsStockModalOpen(false)
   }
 

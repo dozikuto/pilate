@@ -1,31 +1,51 @@
-import { IsNotEmpty, IsOptional, IsString, IsNumber, IsEnum } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingStatus } from '../../../common/enums/booking-status.enum';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  IsUUID,
+  IsEnum,
+} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { BookingStatus } from "../../../common/enums/booking-status.enum";
+import { PaginationDto } from "../../../common/dto/pagination.dto";
+
+export class BookingQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsUUID()
+  scheduleId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  memberId?: string;
+}
 
 export class CreateBookingDto {
-  @ApiProperty({ example: 'uuid-schedule' })
-  @IsString()
+  @ApiProperty({ example: "uuid-schedule" })
+  @IsUUID()
   @IsNotEmpty()
   scheduleId: string;
 
-  @ApiProperty({ example: 'uuid-member' })
-  @IsString()
+  @ApiProperty({ example: "uuid-member" })
+  @IsUUID()
   @IsNotEmpty()
   memberId: string;
 
-  @ApiPropertyOptional({ example: 'uuid-member-package' })
-  @IsString()
+  @ApiPropertyOptional({ example: "uuid-member-package" })
+  @IsUUID()
   @IsOptional()
   memberPackageId?: string;
 
   @ApiPropertyOptional({ example: 3 })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   spotNumber?: number;
 }
 
 export class CancelBookingDto {
-  @ApiPropertyOptional({ example: 'Bận việc đột xuất' })
+  @ApiPropertyOptional({ example: "Bận việc đột xuất" })
   @IsString()
   @IsOptional()
   reason?: string;

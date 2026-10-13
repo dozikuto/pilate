@@ -1,20 +1,34 @@
-import { IsNotEmpty, IsOptional, IsString, IsNumber, IsEnum, IsDateString, IsBoolean } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ClassLevel, ClassType } from '../../../entities/class.entity';
-import { ScheduleStatus } from '../../../entities/class-schedule.entity';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsInt,
+  Min,
+  IsUUID,
+  IsEnum,
+  IsDateString,
+  IsBoolean,
+} from "class-validator";
+import { PartialType } from "@nestjs/mapped-types";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ClassLevel, ClassType } from "../../../entities/class.entity";
+import { ScheduleStatus } from "../../../entities/class-schedule.entity";
 
 export class CreateClassDto {
-  @ApiProperty({ example: 'uuid-branch' })
+  @ApiPropertyOptional({ example: "uuid-branch" })
   @IsString()
-  @IsNotEmpty()
-  branchId: string;
+  @IsOptional()
+  branchId?: string;
 
-  @ApiProperty({ example: 'Reformer Fundamentals' })
+  @ApiProperty({ example: "Reformer Fundamentals" })
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @ApiPropertyOptional({ example: 'Lớp Pilates Reformer căn bản dành cho người mới bắt đầu' })
+  @ApiPropertyOptional({
+    example: "Lớp Pilates Reformer căn bản dành cho người mới bắt đầu",
+  })
   @IsString()
   @IsOptional()
   description?: string;
@@ -40,51 +54,55 @@ export class CreateClassDto {
   defaultRoomId?: string;
 
   @ApiPropertyOptional({ example: 8 })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   defaultMaxCapacity?: number;
 
   @ApiPropertyOptional({ example: 55 })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   durationMinutes?: number;
 
   @ApiPropertyOptional({ example: 250000 })
   @IsNumber()
+  @Min(0)
   @IsOptional()
   price?: number;
 }
 
 export class CreateScheduleDto {
-  @ApiProperty({ example: 'uuid-class' })
-  @IsString()
+  @ApiProperty({ example: "uuid-class" })
+  @IsUUID()
   @IsNotEmpty()
   classId: string;
 
-  @ApiProperty({ example: 'uuid-instructor-user' })
-  @IsString()
+  @ApiProperty({ example: "uuid-instructor-user" })
+  @IsUUID()
   @IsNotEmpty()
   instructorId: string;
 
-  @ApiProperty({ example: 'uuid-room' })
-  @IsString()
+  @ApiProperty({ example: "uuid-room" })
+  @IsUUID()
   @IsNotEmpty()
   roomId: string;
 
-  @ApiProperty({ example: '2026-09-25T09:00:00Z' })
+  @ApiProperty({ example: "2026-09-25T09:00:00Z" })
   @IsDateString()
   startTime: string;
 
-  @ApiProperty({ example: '2026-09-25T10:00:00Z' })
+  @ApiProperty({ example: "2026-09-25T10:00:00Z" })
   @IsDateString()
   endTime: string;
 
   @ApiPropertyOptional({ example: 8 })
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   @IsOptional()
   maxCapacity?: number;
 
-  @ApiPropertyOptional({ example: 'Nhớ mang vớ chống trượt' })
+  @ApiPropertyOptional({ example: "Nhớ mang vớ chống trượt" })
   @IsString()
   @IsOptional()
   notes?: string;
@@ -93,4 +111,12 @@ export class CreateScheduleDto {
   @IsBoolean()
   @IsOptional()
   isRecurring?: boolean;
+}
+
+export class UpdateClassDto extends PartialType(CreateClassDto) {}
+
+export class UpdateScheduleDto extends PartialType(CreateScheduleDto) {
+  @IsOptional()
+  @IsEnum(ScheduleStatus)
+  status?: ScheduleStatus;
 }

@@ -37,6 +37,11 @@ export class CreatePackageDto {
   @IsOptional()
   isTransferable?: boolean;
 
+  @ApiPropertyOptional({ default: true })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()

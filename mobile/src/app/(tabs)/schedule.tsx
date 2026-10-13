@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 
 import {
   useSchedules,
@@ -94,11 +95,20 @@ export default function ScheduleScreen() {
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
       
-      <View className="bg-[#1A3A5C] px-5 pt-5 pb-4">
-        <Text className="text-white text-xl font-bold">Lịch học</Text>
-        <Text className="text-blue-200 text-sm mt-0.5">
-          Chọn ngày để xem và đặt lớp học
-        </Text>
+      <View className="bg-[#1A3A5C] px-5 pt-5 pb-4 flex-row items-center justify-between">
+        <View className="flex-1 pr-3">
+          <Text className="text-white text-xl font-bold">Lịch học</Text>
+          <Text className="text-blue-200 text-sm mt-0.5">
+            Chọn ngày để xem và đặt lớp học
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push("/instructor-schedule" as any)}
+          className="flex-row items-center bg-white/15 px-3 py-2 rounded-full"
+        >
+          <Ionicons name="person-circle-outline" size={18} color="#fff" />
+          <Text className="text-white text-xs font-semibold ml-1">Theo HLV</Text>
+        </TouchableOpacity>
       </View>
 
       <View className="bg-white shadow-sm">

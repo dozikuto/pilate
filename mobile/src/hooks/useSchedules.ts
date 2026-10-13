@@ -39,6 +39,7 @@ export function useBookClass() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY] });
+      queryClient.invalidateQueries({ queryKey: ["instructor-week"] });
       queryClient.invalidateQueries({ queryKey: ["my-packages"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
@@ -56,6 +57,7 @@ export function useCancelBooking() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY] });
+      queryClient.invalidateQueries({ queryKey: ["instructor-week"] });
       queryClient.invalidateQueries({ queryKey: ["my-packages"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },

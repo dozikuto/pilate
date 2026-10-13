@@ -1,102 +1,139 @@
 import {
-  Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { MembersService } from './members.service';
-import { CreateMemberDto, UpdateMemberDto } from './dto/create-member.dto';
-import { PaginationDto } from '../../common/dto/pagination.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../../common/enums/user-role.enum';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+} from "@nestjs/swagger";
+import { MembersService } from "./members.service";
+import { CreateMemberDto, UpdateMemberDto } from "./dto/create-member.dto";
+import { PaginationDto } from "../../common/dto/pagination.dto";
+import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../../common/guards/roles.guard";
+import { Roles } from "../../common/decorators/roles.decorator";
+import { UserRole } from "../../common/enums/user-role.enum";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 
-@ApiTags('Members')
-@ApiBearerAuth('access-token')
+@ApiTags("Members")
+@ApiBearerAuth("access-token")
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('members')
+@Controller("members")
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST, UserRole.INSTRUCTOR)
-  @ApiOperation({ summary: 'Get all members with pagination and search' })
+  @ApiOperation({ summary: "Get all members with pagination and search" })
+  @ApiQuery({
+    name: "status",
+    required: false,
+    enum: ["active", "inactive", "expired"],
+  })
   findAll(@Query() pagination: PaginationDto) {
-    return this.membersService.findAll(pagination);
+    return this.membersService.findAll(pagination, pagination.status);
   }
 
-  @Get('me')
+  @Get("me")
   @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Get current member profile' })
-  getProfile(@CurrentUser('id') userId: string) {
+  @ApiOperation({ summary: "Get current member profile" })
+  getProfile(@CurrentUser("id") userId: string) {
     return this.membersService.findByUserId(userId);
   }
 
-  @Get('me/packages')
+  @Put("me")
   @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Get current member packages' })
-  getMyPackages(@CurrentUser('id') userId: string) {
+  @ApiOperation({ summary: "Update current member profile" })
+  updateMyProfile(
+    @CurrentUser("id") userId: string,
+    @Body() body: UpdateMemberDto,
+  ) {
+    return this.membersService.updateProfileByUserId(userId, body);
+  }
+
+  @Patch("me")
+  @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
+  updateMyProfilePatch(
+    @CurrentUser("id") userId: string,
+    @Body() body: UpdateMemberDto,
+  ) {
+    return this.membersService.updateProfileByUserId(userId, body);
+  }
+
+  @Get("me/packages")
+  @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
+  @ApiOperation({ summary: "Get current member packages" })
+  getMyPackages(@CurrentUser("id") userId: string) {
     return this.membersService.getMyPackages(userId);
   }
 
-  @Post('me/packages')
+  @Post("me/packages")
   @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Purchase/assign package for current member' })
-  purchasePackage(
-    @CurrentUser('id') userId: string,
-    @Body() body: any,
-  ) {
+  @ApiOperation({ summary: "Purchase/assign package for current member" })
+  purchasePackage(@CurrentUser("id") userId: string, @Body() body: any) {
     return this.membersService.purchasePackage(userId, body);
   }
 
-  @Get('me/stats')
+  @Get("me/stats")
   @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Get dashboard stats for current member' })
-  getMyStats(@CurrentUser('id') userId: string) {
+  @ApiOperation({ summary: "Get dashboard stats for current member" })
+  getMyStats(@CurrentUser("id") userId: string) {
     return this.membersService.getMyStats(userId);
   }
 
-  @Get('me/attendance')
+  @Get("me/attendance")
   @Roles(UserRole.MEMBER, UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Get attendance history for current member' })
+  @ApiOperation({ summary: "Get attendance history for current member" })
   getMyAttendance(
-    @CurrentUser('id') userId: string,
-    @Query('limit') limit = 5,
+    @CurrentUser("id") userId: string,
+    @Query("limit") limit = 5,
   ) {
     return this.membersService.getMyAttendance(userId, Number(limit) || 5);
   }
 
-  @Get(':id')
+  @Get(":id")
   @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST, UserRole.INSTRUCTOR)
-  @ApiOperation({ summary: 'Get member details by ID' })
-  findOne(@Param('id') id: string) {
+  @ApiOperation({ summary: "Get member details by ID" })
+  findOne(@Param("id", ParseUUIDPipe) id: string) {
     return this.membersService.findOne(id);
   }
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Create a new member' })
+  @ApiOperation({ summary: "Create a new member" })
   create(@Body() createMemberDto: CreateMemberDto) {
     return this.membersService.create(createMemberDto);
   }
 
-  @Patch(':id')
+  @Patch(":id")
   @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
-  @ApiOperation({ summary: 'Update member profile' })
-  update(@Param('id') id: string, @Body() updateMemberDto: UpdateMemberDto) {
+  @ApiOperation({ summary: "Update member profile" })
+  update(@Param("id") id: string, @Body() updateMemberDto: UpdateMemberDto) {
     return this.membersService.update(id, updateMemberDto);
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Deactivate member' })
-  remove(@Param('id') id: string) {
+  @ApiOperation({ summary: "Deactivate member" })
+  remove(@Param("id") id: string) {
     return this.membersService.remove(id);
   }
 
-  @Get(':id/qr-code')
-  @ApiOperation({ summary: 'Get QR Code data and image for member' })
-  getQrCode(@Param('id') id: string) {
+  @Get(":id/qr-code")
+  @ApiOperation({ summary: "Get QR Code data and image for member" })
+  getQrCode(@Param("id") id: string) {
     return this.membersService.getQrCodeImage(id);
   }
 }

@@ -98,10 +98,10 @@ export function useNotifications() {
   return useQuery({
     queryKey: ["notifications"],
     queryFn: async () => {
-      const res = await apiClient.get<any>("/notifications?limit=5").catch(() => ({ data: [] }));
+      const res = await apiClient.get<any>("/notifications?limit=10").catch(() => ({ data: [] }));
       const d = res.data?.data ?? res.data;
-      return Array.isArray(d) ? d : [];
+      return Array.isArray(d) ? d : (Array.isArray(d?.items) ? d.items : []);
     },
-    staleTime: 1000 * 60 * 1,
+    staleTime: 0,
   });
 }

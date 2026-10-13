@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Users, Shield, UserPlus, Search, Edit2, Lock,
   Unlock, Check, Save, AlertCircle, Key
@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
+import api from '@/lib/axios'
+import toast from 'react-hot-toast'
 
 interface UserAccount {
   id: string
@@ -184,8 +186,40 @@ export default function UsersPage() {
     password: '',
   })
 
-  const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>(initialPermissions)
+  const isUuid = (str: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+  const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>(() => {
+    try {
+      const saved = localStorage.getItem('pilates_permissions_matrix')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return initialPermissions
+  })
   const [isSavedSuccess, setIsSavedSuccess] = useState(false)
+
+  useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const res = await api.get('/users')
+        const payload = res.data?.data ?? res.data
+        const items = Array.isArray(payload) ? payload : (payload?.items ?? [])
+        if (items.length > 0) {
+          const mapped = items.map((u: any) => ({
+            id: u.id,
+            fullName: u.fullName || 'Người dùng',
+            email: u.email || '',
+            phone: u.phone || '0901234567',
+            role: (u.role || 'member').toLowerCase() as any,
+            isActive: u.isActive !== false,
+            createdAt: u.createdAt ? u.createdAt.split('T')[0] : '2026-09-01',
+          }))
+          setUsers(mapped)
+        }
+      } catch {}
+    }
+    fetchUsers()
+  }, [])
 
   const filteredUsers = users.filter((u) => {
     const matchSearch =
@@ -235,37 +269,79 @@ export default function UsersPage() {
     setIsModalOpen(true)
   }
 
-  const handleSaveUser = () => {
-    if (!formData.fullName || !formData.email) return
-
-    if (editingUser) {
-      setUsers(
-        users.map((u) =>
-          u.id === editingUser.id
-            ? { ...u, fullName: formData.fullName, email: formData.email, phone: formData.phone, role: formData.role }
-            : u
-        )
-      )
-    } else {
-      const newUser: UserAccount = {
-        id: `u-${Date.now()}`,
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
-        role: formData.role,
-        isActive: true,
-        createdAt: new Date().toISOString().split('T')[0],
-      }
-      setUsers([newUser, ...users])
+  const handleSaveUser = async () => {
+    if (!formData.fullName.trim() || !formData.email.trim()) {
+      toast.error('Vui lòng nhập họ tên và email')
+      return
     }
 
-    setIsModalOpen(false)
+    try {
+      if (editingUser) {
+        if (isUuid(editingUser.id)) {
+          await api.patch(`/users/${editingUser.id}`, {
+            fullName: formData.fullName,
+            phone: formData.phone,
+            role: formData.role,
+          })
+        }
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === editingUser.id
+              ? {
+                  ...u,
+                  fullName: formData.fullName,
+                  email: formData.email,
+                  phone: formData.phone,
+                  role: formData.role,
+                }
+              : u
+          )
+        )
+        toast.success('Cập nhật thông tin tài khoản thành công!')
+      } else {
+        let createdId = `u-${Date.now()}`
+        const res = await api.post('/users', {
+          fullName: formData.fullName,
+          email: formData.email,
+          phone: formData.phone || undefined,
+          role: formData.role,
+          password: formData.password || 'Pilates@123',
+        })
+        const saved = res.data?.data || res.data
+        if (saved?.id) createdId = saved.id
+        const newUser: UserAccount = {
+          id: createdId,
+          fullName: formData.fullName,
+          email: formData.email,
+          phone: formData.phone,
+          role: formData.role,
+          isActive: true,
+          createdAt: new Date().toISOString().split('T')[0],
+        }
+        setUsers((prev) => [newUser, ...prev])
+        toast.success('Thêm tài khoản mới thành công!')
+      }
+      setIsModalOpen(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi lưu tài khoản')
+    }
   }
 
-  const handleToggleActive = (id: string) => {
-    setUsers(
-      users.map((u) => (u.id === id ? { ...u, isActive: !u.isActive } : u))
-    )
+  const handleToggleActive = async (id: string) => {
+    const user = users.find((u) => u.id === id)
+    if (!user) return
+    const newStatus = !user.isActive
+    try {
+      if (isUuid(id)) {
+        await api.patch(`/users/${id}`, { isActive: newStatus })
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, isActive: newStatus } : u))
+      )
+      toast.success(newStatus ? 'Đã mở khóa tài khoản thành công!' : 'Đã khóa tài khoản thành công!')
+    } catch {
+      toast.error('Không thể thay đổi trạng thái tài khoản')
+    }
   }
 
   const handleTogglePermission = (groupIndex: number, permIndex: number, roleKey: 'admin' | 'receptionist' | 'instructor' | 'member') => {
@@ -276,7 +352,11 @@ export default function UsersPage() {
   }
 
   const handleSavePermissions = () => {
+    try {
+      localStorage.setItem('pilates_permissions_matrix', JSON.stringify(permissionGroups))
+    } catch {}
     setIsSavedSuccess(true)
+    toast.success('Đã lưu ma trận phân quyền thành công!')
     setTimeout(() => setIsSavedSuccess(false), 3000)
   }
 

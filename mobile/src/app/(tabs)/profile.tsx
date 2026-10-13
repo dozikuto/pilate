@@ -197,9 +197,10 @@ function EditProfileModal({
       const res = await apiClient.put<{ data: typeof user }>("/members/me", {
         fullName,
         phone,
-        healthNote,
+        healthNotes: healthNote,
       });
-      updateUser(res.data.data as any);
+      const profile: any = res.data?.data ?? res.data;
+      updateUser({ ...profile.user, healthNote: profile.healthNotes } as any);
       notifyAlert("Thành công", "Cập nhật hồ sơ thành công!");
       onClose();
     } catch (err: any) {

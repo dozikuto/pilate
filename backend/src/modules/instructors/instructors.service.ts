@@ -38,6 +38,10 @@ export class InstructorsService {
   }
 
   async findOne(id: string) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      throw new NotFoundException(`Instructor #${id} not found`);
+    }
     const instructor = await this.instructorsRepository.findOne({
       where: { id },
       relations: ['user'],
@@ -97,6 +101,10 @@ export class InstructorsService {
   }
 
   async remove(id: string) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return { success: true };
+    }
     const instructor = await this.findOne(id);
     await this.usersRepository.update(instructor.userId, { isActive: false });
     return { success: true };

@@ -28,6 +28,9 @@ export class Review {
   @Column({ name: 'target_id', nullable: true })
   targetId: string;
 
+  @Column({ name: 'target_name', nullable: true })
+  targetName: string;
+
   @Column({ name: 'schedule_id', nullable: true })
   scheduleId: string;
 

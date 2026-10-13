@@ -42,3 +42,5 @@ Thumbs.db
 coverage/
 .turbo/
 .cache/
+/backend/backups/
+/backend/.qa-temp/

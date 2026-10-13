@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Package } from '../../entities/package.entity';
-import { MemberPackage, MemberPackageStatus } from '../../entities/member-package.entity';
-import { CreatePackageDto, AssignPackageDto } from './dto/create-package.dto';
-import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Package } from "../../entities/package.entity";
+import {
+  MemberPackage,
+  MemberPackageStatus,
+} from "../../entities/member-package.entity";
+import { CreatePackageDto, AssignPackageDto } from "./dto/create-package.dto";
+import { PaginationDto, paginate } from "../../common/dto/pagination.dto";
 
 @Injectable()
 export class PackagesService {
@@ -16,21 +23,28 @@ export class PackagesService {
   ) {}
 
   async findAll(pagination: PaginationDto) {
-    const qb = this.packagesRepository.createQueryBuilder('package');
+    const qb = this.packagesRepository.createQueryBuilder("package");
 
     if (pagination.search) {
-      qb.where('package.name ILIKE :search', { search: `%${pagination.search}%` });
+      qb.where("package.name ILIKE :search", {
+        search: `%${pagination.search}%`,
+      });
     }
 
     qb.skip(pagination.skip)
       .take(pagination.limit)
-      .orderBy('package.createdAt', pagination.order || 'DESC');
+      .orderBy("package.createdAt", pagination.order || "DESC");
 
     const [items, total] = await qb.getManyAndCount();
     return paginate(items, total, pagination);
   }
 
   async findOne(id: string) {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      throw new NotFoundException(`Package #${id} not found`);
+    }
     const pkg = await this.packagesRepository.findOne({ where: { id } });
     if (!pkg) throw new NotFoundException(`Package #${id} not found`);
     return pkg;
@@ -48,6 +62,11 @@ export class PackagesService {
   }
 
   async remove(id: string) {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return { success: true };
+    }
     await this.findOne(id);
     await this.packagesRepository.update(id, { isActive: false });
     return { success: true };
@@ -55,6 +74,7 @@ export class PackagesService {
 
   async assignToMember(dto: AssignPackageDto) {
     const pkg = await this.findOne(dto.packageId);
+    if (!pkg.isActive) throw new BadRequestException("Gói đã ngừng hoạt động");
     const startDate = dto.startDate ? new Date(dto.startDate) : new Date();
 
     let expiryDate: Date | null = null;
@@ -79,14 +99,19 @@ export class PackagesService {
   async findMemberPackages(memberId: string) {
     return this.memberPackagesRepository.find({
       where: { memberId },
-      relations: ['package'],
-      order: { createdAt: 'DESC' },
+      relations: ["package"],
+      order: { createdAt: "DESC" },
     });
   }
 
   async deductSession(memberPackageId: string) {
-    const mp = await this.memberPackagesRepository.findOne({ where: { id: memberPackageId } });
-    if (!mp) throw new NotFoundException(`Member package #${memberPackageId} not found`);
+    const mp = await this.memberPackagesRepository.findOne({
+      where: { id: memberPackageId },
+    });
+    if (!mp)
+      throw new NotFoundException(
+        `Member package #${memberPackageId} not found`,
+      );
 
     if (mp.remainingSessions > 0) {
       mp.remainingSessions -= 1;

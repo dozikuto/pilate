@@ -1,14 +1,56 @@
-import { useState } from 'react'
-import { Save, Building2, Bell, Shield, Smartphone, Database, Download, Upload, History } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Save, Building2, Bell, Shield, Database, Download, Upload, History } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import toast from 'react-hot-toast'
+import { api } from '@/lib/axios'
 
 export default function SettingsPage() {
-  const [studioName, setStudioName] = useState('PilatesMS Studio')
-  const [studioAddress, setStudioAddress] = useState('123 Nguyễn Thị Minh Khai, Bến Thành, Quận 1, TP.HCM')
-  const [studioPhone, setStudioPhone] = useState('028 3812 3456')
-  const [studioEmail, setStudioEmail] = useState('contact@pilatesms.vn')
+  const [studioName, setStudioName] = useState('')
+  const [studioAddress, setStudioAddress] = useState('')
+  const [studioPhone, setStudioPhone] = useState('')
+  const [studioEmail, setStudioEmail] = useState('')
   const [cancelHoursLimit, setCancelHoursLimit] = useState(2)
+  const [backups, setBackups] = useState<any[]>([])
+  const [selectedBackup, setSelectedBackup] = useState('')
+  const [logs, setLogs] = useState<any[]>([])
+  const [busy, setBusy] = useState(false)
+
+  async function refresh() {
+    const [config, backupList, logList] = await Promise.all([api.get('/system/config'), api.get('/system/backups'), api.get('/system/logs?limit=20')])
+    const c = config.data
+    setStudioName(c.studioName); setStudioAddress(c.studioAddress ?? c.address); setStudioPhone(c.studioPhone ?? c.hotline); setStudioEmail(c.studioEmail ?? c.email); setCancelHoursLimit(c.cancelHoursLimit)
+    setBackups(backupList.data); setLogs(logList.data.items ?? [])
+  }
+  useEffect(() => { refresh().catch(() => toast.error('Không tải được cấu hình hệ thống')) }, [])
+
+  const handleSaveSettings = async () => {
+    setBusy(true)
+    try {
+      await api.patch('/system/config', { studioName, address: studioAddress, hotline: studioPhone, email: studioEmail, cancelHoursLimit })
+      await refresh(); toast.success('Đã lưu cấu hình hệ thống')
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Không lưu được cấu hình') }
+    finally { setBusy(false) }
+  }
+  const handleBackup = async () => {
+    setBusy(true)
+    try {
+      const { data } = await api.post('/system/backup')
+      const file = await api.get('/system/backups/' + data.backupId + '/download', { responseType: 'blob' })
+      const url = URL.createObjectURL(file.data)
+      const link = document.createElement('a'); link.href = url; link.download = data.filename; link.click(); URL.revokeObjectURL(url)
+      setSelectedBackup(data.backupId); await refresh(); toast.success('Đã tạo và tải bản sao lưu dữ liệu')
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Không tạo được bản sao lưu') }
+    finally { setBusy(false) }
+  }
+  const handleRestore = async () => {
+    if (!selectedBackup) { toast.error('Chọn bản sao lưu cần khôi phục'); return }
+    if (!window.confirm('Khôi phục sẽ thay thế dữ liệu hiện tại bằng bản sao lưu đã chọn. Tiếp tục?')) return
+    setBusy(true)
+    try { await api.post('/system/restore/' + selectedBackup); await refresh(); toast.success('Đã khôi phục dữ liệu') }
+    catch (e: any) { toast.error(e?.response?.data?.message || 'Không khôi phục được dữ liệu') }
+    finally { setBusy(false) }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -125,13 +167,17 @@ export default function SettingsPage() {
           <span>Sao Lưu & Khôi Phục Dữ Liệu (R7.6, R7.7)</span>
         </div>
 
+        <select className="border rounded-lg p-2 w-full" aria-label="Bản sao lưu" value={selectedBackup} onChange={e => setSelectedBackup(e.target.value)}>
+          <option value="">Chọn bản sao lưu</option>
+          {backups.map(b => <option key={b.backupId} value={b.backupId}>{b.filename} — {new Date(b.createdAt).toLocaleString('vi-VN')}</option>)}
+        </select>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 border rounded-xl flex items-center justify-between bg-gray-50">
             <div>
               <div className="font-semibold text-sm text-gray-900">Sao lưu tự động CSDL</div>
-              <div className="text-xs text-gray-500 mt-0.5">Bản sao lưu gần nhất: Hôm nay 04:00 AM (1.5 MB)</div>
+              <div className="text-xs text-gray-500 mt-0.5">{backups[0] ? 'Gần nhất: ' + new Date(backups[0].createdAt).toLocaleString('vi-VN') + ' (' + backups[0].sizeBytes + ' bytes)' : 'Chưa có bản sao lưu'}</div>
             </div>
-            <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs">
+            <Button variant="outline" size="sm" disabled={busy} onClick={handleBackup} className="flex items-center gap-1.5 text-xs">
               <Download className="w-3.5 h-3.5" /> Sao lưu ngay
             </Button>
           </div>
@@ -139,9 +185,9 @@ export default function SettingsPage() {
           <div className="p-4 border rounded-xl flex items-center justify-between bg-gray-50">
             <div>
               <div className="font-semibold text-sm text-gray-900">Khôi phục điểm dữ liệu</div>
-              <div className="text-xs text-gray-500 mt-0.5">Phục hồi lại trạng thái hệ thống từ file .sql</div>
+              <div className="text-xs text-gray-500 mt-0.5">Khôi phục dữ liệu từ bản sao lưu JSON của hệ thống</div>
             </div>
-            <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50">
+            <Button variant="outline" size="sm" disabled={busy || !selectedBackup} onClick={handleRestore} className="flex items-center gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50">
               <Upload className="w-3.5 h-3.5" /> Khôi phục
             </Button>
           </div>
@@ -166,34 +212,21 @@ export default function SettingsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
-              <tr>
-                <td className="py-2.5 px-3 font-mono text-gray-400">14:55:00</td>
-                <td className="py-2.5 px-3 font-semibold">Admin (admin@pilatesms.vn)</td>
-                <td className="py-2.5 px-3"><span className="bg-blue-50 text-blue-700 font-semibold px-2 py-0.5 rounded">CONFIG_UPDATE</span></td>
-                <td className="py-2.5 px-3">System</td>
-                <td className="py-2.5 px-3 text-gray-500">Cập nhật thông tin phòng tập</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-3 font-mono text-gray-400">11:15:20</td>
-                <td className="py-2.5 px-3 font-semibold">Lễ tân (letan@pilatesms.vn)</td>
-                <td className="py-2.5 px-3"><span className="bg-green-50 text-green-700 font-semibold px-2 py-0.5 rounded">CHECK_IN</span></td>
-                <td className="py-2.5 px-3">Booking</td>
-                <td className="py-2.5 px-3 text-gray-500">QR Check-in học viên Nguyễn Thu Hằng</td>
-              </tr>
-              <tr>
-                <td className="py-2.5 px-3 font-mono text-gray-400">09:30:12</td>
-                <td className="py-2.5 px-3 font-semibold">Học viên (hang.nguyen@gmail.com)</td>
-                <td className="py-2.5 px-3"><span className="bg-purple-50 text-purple-700 font-semibold px-2 py-0.5 rounded">BOOKING</span></td>
-                <td className="py-2.5 px-3">ClassSchedule</td>
-                <td className="py-2.5 px-3 text-gray-500">Đặt chỗ lớp Reformer Fundamentals</td>
-              </tr>
+              {logs.map(log => <tr key={log.id}>
+                <td className="py-2.5 px-3">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
+                <td className="py-2.5 px-3">{log.user?.fullName || 'Hệ thống'}</td>
+                <td className="py-2.5 px-3">{log.action}</td>
+                <td className="py-2.5 px-3">{log.resource}</td>
+                <td className="py-2.5 px-3">{log.details}</td>
+              </tr>)}
+              {!logs.length && <tr><td colSpan={5} className="py-4 text-center">Chưa có nhật ký</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
 
       <div className="flex justify-end pt-2">
-        <Button className="flex items-center gap-2">
+        <Button disabled={busy} onClick={handleSaveSettings} className="flex items-center gap-2">
           <Save className="w-4 h-4" />
           Lưu Cài Đặt
         </Button>

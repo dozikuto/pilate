@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -22,9 +22,17 @@ import {
   useNotifications,
 } from "@/hooks/usePackages";
 import { useUpcomingClasses } from "@/hooks/useSchedules";
+import { useInstructorOptions } from "@/hooks/useInstructorSchedule";
 import StatsCard from "@/components/StatsCard";
 import ClassCard from "@/components/ClassCard";
 import { formatDate, formatRelativeTime } from "@/lib/utils";
+
+const fallbackInstructors = [
+  { id: "ins-1", userId: "u-1", fullName: "HLV Vũ Quốc Huy", specializations: "Phục hồi cột sống, Cải thiện vóc dáng" },
+  { id: "ins-2", userId: "u-2", fullName: "HLV Trần Mai Lan", specializations: "Reformer nâng cao, Giảm mỡ siết cơ" },
+  { id: "ins-3", userId: "u-3", fullName: "HLV Nguyễn Thu Hà", specializations: "Pilates bầu & Phục hồi sau sinh" },
+  { id: "ins-4", userId: "u-4", fullName: "HLV Lê Đức Anh", specializations: "Cadillac & Barrel, Thể lực chuyên sâu" },
+];
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -57,11 +65,33 @@ export default function HomeScreen() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
 
+  const { data: instructorOptions } = useInstructorOptions();
+  const instructorsList =
+    instructorOptions && instructorOptions.length > 0
+      ? instructorOptions
+      : fallbackInstructors;
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
+  const [selectedInstructorName, setSelectedInstructorName] = useState<string>("");
+
+  useEffect(() => {
+    if (instructorsList.length > 0 && !selectedInstructorId) {
+      const first = instructorsList[0];
+      setSelectedInstructorId(first.id || first.userId);
+      setSelectedInstructorName(first.fullName);
+    }
+  }, [instructorsList, selectedInstructorId]);
+
   const handleSubmitReview = async () => {
+    if (reviewTarget === "instructor" && !selectedInstructorId) {
+      Alert.alert("Thông báo", "Vui lòng chọn Huấn luyện viên bạn muốn đánh giá");
+      return;
+    }
     setReviewSubmitting(true);
     try {
       await apiClient.post("/reviews", {
         targetType: reviewTarget,
+        targetId: reviewTarget === "instructor" ? selectedInstructorId : undefined,
+        targetName: reviewTarget === "instructor" ? selectedInstructorName : undefined,
         rating: reviewRating,
         comment: reviewComment.trim() || undefined,
       });
@@ -124,7 +154,7 @@ export default function HomeScreen() {
             </View>
             <TouchableOpacity className="w-10 h-10 bg-white/15 rounded-full items-center justify-center">
               <Ionicons name="notifications-outline" size={20} color="white" />
-              {notifications && notifications.filter((n) => !n.isRead).length > 0 && (
+              {notifications && notifications.filter((n: any) => !n.isRead).length > 0 && (
                 <View className="absolute top-1 right-1 w-2.5 h-2.5 bg-[#C0392B] rounded-full" />
               )}
             </TouchableOpacity>
@@ -252,7 +282,7 @@ export default function HomeScreen() {
             </View>
           ) : notifications && notifications.length > 0 ? (
             <View className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
-              {notifications.map((noti, idx) => (
+              {notifications.map((noti: any, idx: number) => (
                 <View
                   key={noti.id}
                   className={`flex-row p-4 ${
@@ -384,6 +414,76 @@ export default function HomeScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {reviewTarget === "instructor" && (
+                  <View className="mb-4">
+                    <Text className="text-gray-600 text-xs mb-2 font-medium">
+                      Chọn Huấn luyện viên bạn muốn đánh giá:
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      className="flex-row -mx-1"
+                    >
+                      {instructorsList.map((ins: any) => {
+                        const isSelected =
+                          (ins.id && ins.id === selectedInstructorId) ||
+                          (ins.userId && ins.userId === selectedInstructorId);
+                        return (
+                          <TouchableOpacity
+                            key={ins.id || ins.userId}
+                            onPress={() => {
+                              setSelectedInstructorId(ins.id || ins.userId);
+                              setSelectedInstructorName(ins.fullName);
+                            }}
+                            className={`mr-2.5 p-3 rounded-2xl border min-w-[130px] max-w-[170px] ${
+                              isSelected
+                                ? "bg-amber-50 border-amber-500 shadow-sm"
+                                : "bg-gray-50 border-gray-200"
+                            }`}
+                          >
+                            <View className="flex-row items-center justify-between mb-1.5">
+                              <View
+                                className={`w-8 h-8 rounded-full items-center justify-center ${
+                                  isSelected ? "bg-amber-500" : "bg-gray-200"
+                                }`}
+                              >
+                                <Text
+                                  className={`text-xs font-bold ${
+                                    isSelected ? "text-white" : "text-gray-700"
+                                  }`}
+                                >
+                                  {ins.fullName ? ins.fullName.charAt(0) : "H"}
+                                </Text>
+                              </View>
+                              {isSelected && (
+                                <Ionicons
+                                  name="checkmark-circle"
+                                  size={18}
+                                  color="#D97706"
+                                />
+                              )}
+                            </View>
+                            <Text
+                              numberOfLines={1}
+                              className={`text-xs font-bold ${
+                                isSelected ? "text-amber-900" : "text-gray-800"
+                              }`}
+                            >
+                              {ins.fullName}
+                            </Text>
+                            <Text
+                              numberOfLines={1}
+                              className="text-[10px] text-gray-500 mt-0.5"
+                            >
+                              {ins.specializations || "HLV Pilates"}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
 
                 <Text className="text-gray-600 text-xs mb-2 font-medium text-center">
                   Mức độ hài lòng:

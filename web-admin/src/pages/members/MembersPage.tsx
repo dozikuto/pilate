@@ -74,7 +74,7 @@ const memberSchema = z.object({
 type MemberFormData = z.infer<typeof memberSchema>
 
 const statusOptions = [
-  { label: 'Tất cả trạng thái', value: '' },
+  { label: 'Tất cả trạng thái', value: 'all' },
   { label: 'Hoạt động', value: 'active' },
   { label: 'Không hoạt động', value: 'inactive' },
   { label: 'Hết hạn', value: 'expired' },
@@ -84,7 +84,7 @@ export default function MembersPage() {
   const navigate = useNavigate()
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [modalOpen, setModalOpen] = useState(false)
 
   const debouncedSearch = useDebounce(search, 400)
@@ -93,7 +93,7 @@ export default function MembersPage() {
     page,
     limit: 10,
     search: debouncedSearch,
-    status: statusFilter || undefined,
+    status: statusFilter !== 'all' ? statusFilter : undefined,
   })
 
   const createMember = useCreateMember()
@@ -116,9 +116,26 @@ export default function MembersPage() {
     })
   }
 
-  const members = Array.isArray(data?.data) ? data.data : (data?.data ?? mockMembers)
-  const total = data?.total ?? members.length
-  const totalPages = data?.totalPages ?? Math.max(1, Math.ceil(total / 10))
+  const apiItems = Array.isArray(data?.data)
+    ? data.data
+    : Array.isArray((data as any)?.items)
+    ? (data as any).items
+    : null
+  const rawList: Member[] = apiItems !== null ? apiItems : mockMembers
+
+  const members = rawList.filter((m: Member) => {
+    if (statusFilter && statusFilter !== 'all' && m.status !== statusFilter) return false
+    if (debouncedSearch) {
+      const s = debouncedSearch.toLowerCase()
+      const matchName = m.name?.toLowerCase().includes(s)
+      const matchPhone = m.phone?.includes(s)
+      const matchEmail = m.email?.toLowerCase().includes(s)
+      if (!matchName && !matchPhone && !matchEmail) return false
+    }
+    return true
+  })
+  const total = statusFilter !== 'all' || debouncedSearch ? members.length : (data?.total ?? members.length)
+  const totalPages = Math.max(1, Math.ceil(total / 10))
 
   const columns: Column<Member>[] = [
     {
@@ -244,6 +261,7 @@ export default function MembersPage() {
               setStatusFilter(v)
               setPage(1)
             }}
+            placeholder=""
             className="w-48"
           />
         </div>
