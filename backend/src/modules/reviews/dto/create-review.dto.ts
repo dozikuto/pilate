@@ -43,3 +43,12 @@ export class CreateReviewDto {
   @IsOptional()
   comment?: string;
 }
+
+export class ReplyReviewDto {
+  @ApiProperty({
+    example: "Cảm ơn bạn đã đánh giá! PilatesMS rất vui được đồng hành cùng bạn.",
+  })
+  @IsString()
+  @IsNotEmpty({ message: "Vui lòng nhập nội dung phản hồi cho học viên" })
+  reply: string;
+}

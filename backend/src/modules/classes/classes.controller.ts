@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  HttpCode,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -22,6 +23,7 @@ import {
   CreateScheduleDto,
   UpdateClassDto,
   UpdateScheduleDto,
+  CreateRecurringSchedulesDto,
 } from "./dto/create-class.dto";
 import { PaginationDto } from "../../common/dto/pagination.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -41,6 +43,12 @@ export class ClassesController {
   @ApiOperation({ summary: "Get all classes" })
   findAllClasses(@Query() pagination: PaginationDto) {
     return this.classesService.findAllClasses(pagination);
+  }
+
+  @Get("classes/rooms")
+  @ApiOperation({ summary: "Danh sách phòng khả dụng để xếp lịch lớp học" })
+  findScheduleRooms() {
+    return this.classesService.findScheduleRooms();
   }
 
   @Get("classes/:id")
@@ -69,7 +77,7 @@ export class ClassesController {
   @Delete("classes/:id")
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: "Deactivate class" })
-  removeClass(@Param("id") id: string) {
+  removeClass(@Param("id", ParseUUIDPipe) id: string) {
     return this.classesService.removeClass(id);
   }
 
@@ -94,6 +102,7 @@ export class ClassesController {
     @Query("instructorId") instructorId?: string,
     @Query("date") date?: string,
     @CurrentUser("id") userId?: string,
+    @CurrentUser("role") userRole?: string,
   ) {
     return this.classesService.findSchedules(
       startDate,
@@ -101,6 +110,7 @@ export class ClassesController {
       instructorId,
       date,
       userId,
+      userRole,
     );
   }
 
@@ -118,6 +128,23 @@ export class ClassesController {
   @ApiOperation({ summary: "Create new class schedule" })
   createSchedule(@Body() dto: CreateScheduleDto) {
     return this.classesService.createSchedule(dto);
+  }
+
+  @Post("schedules/recurring/preview")
+  @HttpCode(200)
+  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  @ApiOperation({
+    summary: "Xem trước các ngày lặp theo tuần và xung đột phòng/HLV",
+  })
+  previewRecurringSchedules(@Body() dto: CreateRecurringSchedulesDto) {
+    return this.classesService.previewRecurringSchedules(dto);
+  }
+
+  @Post("schedules/recurring")
+  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  @ApiOperation({ summary: "Tạo lịch hàng loạt theo tuần trong một giao dịch" })
+  createRecurringSchedules(@Body() dto: CreateRecurringSchedulesDto) {
+    return this.classesService.createRecurringSchedules(dto);
   }
 
   @Patch("schedules/:id")

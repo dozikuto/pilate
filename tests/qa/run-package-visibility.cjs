@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const dep = require('node:module').createRequire(path.resolve(__dirname, '../../backend/package.json'));
+dep('ts-node').register({ transpileOnly: true, skipProject: true, compilerOptions: { module: 'CommonJS', moduleResolution: 'node' } });
+const { scheduleMatchesPackage } = require('../../mobile/src/lib/packageBooking.ts');
+const schedule = (type, capacity, minutes = 60, extra = {}) => ({ id: type, class: { type }, capacity, startTime: '2030-01-01T09:00:00+07:00', endTime: `2030-01-01T${minutes === 60 ? '10:00' : '09:45'}:00+07:00`, ...extra });
+const group = { package: { privateSessionEnabled: false } }, privateOne = { package: { privateSessionEnabled: true, privateSessionType: 'private_1v1', privateSessionDurationMinutes: 60 } }, duo = { package: { privateSessionEnabled: true, privateSessionType: 'semi_private_1v2', privateSessionDurationMinutes: 60 } };
+const all = [schedule('group', 6), schedule('private', 1), schedule('semi_private', 2)];
+assert.deepEqual(all.filter(s => scheduleMatchesPackage(s, group)).map(s => s.id), ['group']);
+assert.deepEqual(all.filter(s => scheduleMatchesPackage(s, privateOne)).map(s => s.id), ['private']);
+assert.deepEqual(all.filter(s => scheduleMatchesPackage(s, duo)).map(s => s.id), ['semi_private']);
+assert.equal(scheduleMatchesPackage(schedule('private', 1, 60, { isBooked: true }), group), false);
+assert.equal(scheduleMatchesPackage(schedule('private', 1, 45), privateOne), false);
+assert.equal(scheduleMatchesPackage(all[0], undefined), false);
+console.log('PASS 6/6: lớp chung / 1:1 / 1:2 tách biệt, không vượt lọc vì đã đặt, đúng thời lượng và cần chọn gói');

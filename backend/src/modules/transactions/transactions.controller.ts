@@ -87,7 +87,12 @@ export class TransactionsController {
   confirm(
     @Param("id") id: string,
     @Body("referenceCode") referenceCode?: string,
+    @CurrentUser("id") currentUserId?: string,
   ) {
-    return this.transactionsService.confirmPayment(id, referenceCode);
+    return this.transactionsService.confirmPayment(
+      id,
+      referenceCode,
+      currentUserId,
+    );
   }
 }

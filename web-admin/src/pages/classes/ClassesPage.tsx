@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, Clock, Users, DollarSign, Edit, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
-import { Input } from '@/components/ui/Input'
+import { Input, NumberInput } from '@/components/ui/Input'
+import { parseNumberInput } from '@/lib/numberInput'
 import { Select } from '@/components/ui/Select'
 import { formatCurrency } from '@/lib/utils'
 import api from '@/lib/axios'
@@ -21,55 +23,9 @@ interface ClassItem {
   isActive: boolean
 }
 
-const mockClasses: ClassItem[] = [
-  {
-    id: 'c1',
-    name: 'Reformer Fundamentals',
-    level: 'Căn bản (Beginner)',
-    type: 'Lớp Nhóm',
-    duration: 55,
-    price: 300000,
-    maxCapacity: 8,
-    description: 'Làm quen với máy Reformer, kiểm soát hơi thở và tư thế xương chậu trung tính.',
-    isActive: true,
-  },
-  {
-    id: 'c2',
-    name: 'Pilates Cột Sống & Phục Hồi',
-    level: 'Mọi cấp độ (All levels)',
-    type: 'Lớp Nhóm',
-    duration: 55,
-    price: 350000,
-    maxCapacity: 8,
-    description: 'Giảm áp lực cột sống, trị liệu đau vai gáy và cải thiện độ linh hoạt của cơ lưng.',
-    isActive: true,
-  },
-  {
-    id: 'c3',
-    name: 'Cadillac Private 1:1',
-    level: 'Cá nhân hóa',
-    type: 'Lớp Kèm Riêng',
-    duration: 60,
-    price: 800000,
-    maxCapacity: 1,
-    description: 'Buổi tập 1 kèm 1 chuyên sâu theo phác đồ thể trạng cá nhân của từng học viên.',
-    isActive: true,
-  },
-  {
-    id: 'c4',
-    name: 'Reformer Jumpboard Cardio',
-    level: 'Trung cấp (Intermediate)',
-    type: 'Lớp Nhóm',
-    duration: 55,
-    price: 320000,
-    maxCapacity: 8,
-    description: 'Kết hợp máy Reformer và tấm bật Jumpboard giúp đốt mỡ và tăng cường tim mạch.',
-    isActive: true,
-  },
-]
 
 export default function ClassesPage() {
-  const [classes, setClasses] = useState<ClassItem[]>(mockClasses)
+  const [classes, setClasses] = useState<ClassItem[]>([])
   const [loading, setLoading] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingClass, setEditingClass] = useState<ClassItem | null>(null)
@@ -78,9 +34,9 @@ export default function ClassesPage() {
     name: '',
     type: 'group',
     level: 'beginner',
-    duration: 55,
-    maxCapacity: 8,
-    price: 300000,
+    duration: '55',
+    maxCapacity: '8',
+    price: '300000',
     description: '',
   })
 
@@ -93,7 +49,7 @@ export default function ClassesPage() {
       const res = await api.get('/classes')
       const data = res.data?.data || res.data
       const items = Array.isArray(data) ? data : data?.items || []
-      if (items.length > 0) {
+      {
         const mapped = items.map((c: any) => ({
           id: c.id,
           name: c.name,
@@ -105,9 +61,9 @@ export default function ClassesPage() {
               : c.level === 'advanced'
               ? 'Nâng cao (Advanced)'
               : 'Mọi cấp độ (All levels)',
-          type: c.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Nhóm',
+          type: c.type === 'group' ? 'Lớp Nhóm' : c.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Tập Riêng Nhóm',
           duration: c.durationMinutes || 55,
-          price: Number(c.price) || 300000,
+          price: Number(c.price ?? 300000),
           maxCapacity: c.defaultMaxCapacity || 8,
           description: c.description || 'Chương trình luyện tập Pilates chất lượng cao',
           isActive: c.isActive !== false,
@@ -115,7 +71,7 @@ export default function ClassesPage() {
         setClasses(mapped)
       }
     } catch {
-      // fallback to mock
+      toast.error('Không tải được danh mục lớp. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -131,9 +87,9 @@ export default function ClassesPage() {
       name: '',
       type: 'group',
       level: 'beginner',
-      duration: 55,
-      maxCapacity: 8,
-      price: 300000,
+      duration: '55',
+      maxCapacity: '8',
+      price: '300000',
       description: '',
     })
     setIsModalOpen(true)
@@ -143,7 +99,7 @@ export default function ClassesPage() {
     setEditingClass(cls)
     setFormData({
       name: cls.name,
-      type: cls.type === 'Lớp Kèm Riêng' ? 'private' : 'group',
+      type: cls.type === 'Lớp Kèm Riêng' ? 'private' : cls.type === 'Lớp Tập Riêng Nhóm' ? 'semi_private' : 'group',
       level:
         cls.level.includes('Beginner')
           ? 'beginner'
@@ -152,15 +108,30 @@ export default function ClassesPage() {
           : cls.level.includes('Advanced')
           ? 'advanced'
           : 'all',
-      duration: cls.duration,
-      maxCapacity: cls.maxCapacity,
-      price: cls.price,
+      duration: String(cls.duration),
+      maxCapacity: String(cls.maxCapacity),
+      price: String(cls.price),
       description: cls.description,
     })
     setIsModalOpen(true)
   }
 
   const handleSave = async () => {
+    const duration = parseNumberInput(formData.duration)
+    const maxCapacity = parseNumberInput(formData.maxCapacity)
+    const price = parseNumberInput(formData.price)
+    if (!Number.isInteger(duration) || duration < 1) {
+      toast.error('Thời lượng phải là số phút nguyên lớn hơn 0')
+      return
+    }
+    if (!Number.isInteger(maxCapacity) || maxCapacity < 1) {
+      toast.error('Sĩ số tối đa phải là số nguyên lớn hơn 0')
+      return
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      toast.error('Vui lòng nhập giá lớp từ 0 đồng')
+      return
+    }
     if (!formData.name.trim()) {
       toast.error('Vui lòng nhập tên lớp học')
       return
@@ -170,9 +141,9 @@ export default function ClassesPage() {
       name: formData.name,
       type: formData.type as any,
       level: formData.level as any,
-      durationMinutes: Number(formData.duration),
-      defaultMaxCapacity: Number(formData.maxCapacity),
-      price: Number(formData.price),
+      durationMinutes: duration,
+      defaultMaxCapacity: maxCapacity,
+      price,
       description: formData.description,
     }
 
@@ -187,7 +158,7 @@ export default function ClassesPage() {
               ? {
                   ...c,
                   name: formData.name,
-                  type: formData.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Nhóm',
+                  type: formData.type === 'group' ? 'Lớp Nhóm' : formData.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Tập Riêng Nhóm',
                   level:
                     formData.level === 'beginner'
                       ? 'Căn bản (Beginner)'
@@ -196,9 +167,9 @@ export default function ClassesPage() {
                       : formData.level === 'advanced'
                       ? 'Nâng cao (Advanced)'
                       : 'Mọi cấp độ (All levels)',
-                  duration: Number(formData.duration),
-                  maxCapacity: Number(formData.maxCapacity),
-                  price: Number(formData.price),
+                  duration,
+                  maxCapacity,
+                  price,
                   description: formData.description,
                 }
               : c
@@ -213,7 +184,7 @@ export default function ClassesPage() {
         const newClass: ClassItem = {
           id: createdId,
           name: formData.name,
-          type: formData.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Nhóm',
+          type: formData.type === 'group' ? 'Lớp Nhóm' : formData.type === 'private' ? 'Lớp Kèm Riêng' : 'Lớp Tập Riêng Nhóm',
           level:
             formData.level === 'beginner'
               ? 'Căn bản (Beginner)'
@@ -222,9 +193,9 @@ export default function ClassesPage() {
               : formData.level === 'advanced'
               ? 'Nâng cao (Advanced)'
               : 'Mọi cấp độ (All levels)',
-          duration: Number(formData.duration),
-          maxCapacity: Number(formData.maxCapacity),
-          price: Number(formData.price),
+          duration,
+          maxCapacity,
+          price,
           description: formData.description || 'Chương trình tập luyện Pilates',
           isActive: true,
         }
@@ -284,6 +255,7 @@ export default function ClassesPage() {
                   {formatCurrency(cls.price)}
                 </span>
               </div>
+              <Link to={`/schedule?classId=${cls.id}`} className="inline-flex text-sm font-semibold text-primary hover:underline">Xếp lịch cho lớp này →</Link>
 
               <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed">
                 {cls.description}
@@ -346,6 +318,7 @@ export default function ClassesPage() {
                   options={[
                     { value: 'group', label: 'Lớp Nhóm' },
                     { value: 'private', label: 'Lớp Cá Nhân (1:1)' },
+                    { value: 'semi_private', label: 'Tập riêng nhóm (1:2–1:4)' },
                   ]}
                   value={formData.type}
                   onChange={(val) => setFormData({ ...formData, type: val })}
@@ -370,26 +343,29 @@ export default function ClassesPage() {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Thời lượng (phút)</label>
-                <Input
-                  type="number"
+                <NumberInput
+                  aria-label="Thời lượng (phút)"
+                  min={1}
                   value={formData.duration}
-                  onChange={(e) => setFormData({ ...formData, duration: Number(e.target.value) })}
+                  onValueChange={(duration) => setFormData({ ...formData, duration })}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Sĩ số tối đa</label>
-                <Input
-                  type="number"
+                <NumberInput
+                  aria-label="Sĩ số tối đa"
+                  min={1}
                   value={formData.maxCapacity}
-                  onChange={(e) => setFormData({ ...formData, maxCapacity: Number(e.target.value) })}
+                  onValueChange={(maxCapacity) => setFormData({ ...formData, maxCapacity })}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Giá lẻ (VNĐ)</label>
-                <Input
-                  type="number"
+                <NumberInput
+                  aria-label="Giá lẻ (VNĐ)"
+                  min={0}
                   value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                  onValueChange={(price) => setFormData({ ...formData, price })}
                 />
               </div>
             </div>

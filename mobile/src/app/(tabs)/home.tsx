@@ -19,13 +19,12 @@ import { useAuthStore } from "@/store/auth.store";
 import apiClient from "@/lib/axios";
 import {
   useDashboardStats,
-  useNotifications,
 } from "@/hooks/usePackages";
 import { useUpcomingClasses } from "@/hooks/useSchedules";
 import { useInstructorOptions } from "@/hooks/useInstructorSchedule";
 import StatsCard from "@/components/StatsCard";
 import ClassCard from "@/components/ClassCard";
-import { formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 
 const fallbackInstructors = [
   { id: "ins-1", userId: "u-1", fullName: "HLV Vũ Quốc Huy", specializations: "Phục hồi cột sống, Cải thiện vóc dáng" },
@@ -49,12 +48,6 @@ export default function HomeScreen() {
     isLoading: upcomingLoading,
     refetch: refetchUpcoming,
   } = useUpcomingClasses();
-
-  const {
-    data: notifications,
-    isLoading: notiLoading,
-    refetch: refetchNoti,
-  } = useNotifications();
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -111,9 +104,9 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchStats(), refetchUpcoming(), refetchNoti()]);
+    await Promise.all([refetchStats(), refetchUpcoming()]);
     setRefreshing(false);
-  }, [refetchStats, refetchUpcoming, refetchNoti]);
+  }, [refetchStats, refetchUpcoming]);
 
   const firstName = user?.fullName?.split(" ").pop() ?? "bạn";
   const greeting = getGreeting();
@@ -152,12 +145,6 @@ export default function HomeScreen() {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity className="w-10 h-10 bg-white/15 rounded-full items-center justify-center">
-              <Ionicons name="notifications-outline" size={20} color="white" />
-              {notifications && notifications.filter((n: any) => !n.isRead).length > 0 && (
-                <View className="absolute top-1 right-1 w-2.5 h-2.5 bg-[#C0392B] rounded-full" />
-              )}
-            </TouchableOpacity>
           </View>
 
           <Text className="text-white text-xl font-bold mt-5 mb-1">
@@ -238,7 +225,7 @@ export default function HomeScreen() {
             <View className="bg-white rounded-2xl p-6 items-center border border-gray-100">
               <Ionicons name="calendar-outline" size={32} color="#D1D5DB" />
               <Text className="text-gray-400 text-sm mt-2">
-                Không có lớp học sắp tới
+                Bạn chưa đăng ký lớp học nào sắp tới
               </Text>
             </View>
           )}
@@ -271,77 +258,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        <View className="mt-6 px-4 mb-8">
-          <Text className="text-[#1A3A5C] text-base font-bold mb-3">
-            Thông báo mới nhất
-          </Text>
-
-          {notiLoading ? (
-            <View className="bg-white rounded-2xl p-6 items-center">
-              <Text className="text-gray-400 text-sm">Đang tải...</Text>
-            </View>
-          ) : notifications && notifications.length > 0 ? (
-            <View className="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
-              {notifications.map((noti: any, idx: number) => (
-                <View
-                  key={noti.id}
-                  className={`flex-row p-4 ${
-                    idx < notifications.length - 1
-                      ? "border-b border-gray-100"
-                      : ""
-                  } ${!noti.isRead ? "bg-blue-50/50" : ""}`}
-                >
-                  <View
-                    className={`w-9 h-9 rounded-full items-center justify-center mr-3 ${
-                      noti.type === "warning"
-                        ? "bg-yellow-100"
-                        : noti.type === "success"
-                        ? "bg-green-100"
-                        : "bg-blue-100"
-                    }`}
-                  >
-                    <Ionicons
-                      name={
-                        noti.type === "warning"
-                          ? "warning-outline"
-                          : noti.type === "success"
-                          ? "checkmark-circle-outline"
-                          : "information-circle-outline"
-                      }
-                      size={18}
-                      color={
-                        noti.type === "warning"
-                          ? "#D97706"
-                          : noti.type === "success"
-                          ? "#059669"
-                          : "#2563EB"
-                      }
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-sm font-semibold text-gray-800">
-                      {noti.title}
-                    </Text>
-                    <Text className="text-xs text-gray-500 mt-0.5" numberOfLines={2}>
-                      {noti.message}
-                    </Text>
-                    <Text className="text-xs text-gray-400 mt-1">
-                      {formatRelativeTime(noti.createdAt)}
-                    </Text>
-                  </View>
-                  {!noti.isRead && (
-                    <View className="w-2 h-2 rounded-full bg-[#1A3A5C] mt-1" />
-                  )}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View className="bg-white rounded-2xl p-6 items-center border border-gray-100">
-              <Ionicons name="notifications-off-outline" size={32} color="#D1D5DB" />
-              <Text className="text-gray-400 text-sm mt-2">Chưa có thông báo</Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
 
       <Modal

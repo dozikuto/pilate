@@ -58,10 +58,22 @@ export default function ClassCard({
           )}
         </View>
         
-        <View className={`flex-row items-center px-2.5 py-1 rounded-full ${status.bg}`}>
-          <View className={`w-2 h-2 rounded-full mr-1.5 ${status.dot}`} />
-          <Text className={`text-xs font-semibold ${status.text}`}>
-            {status.label}
+        <View
+          className={`flex-row items-center px-2.5 py-1 rounded-full ${
+            schedule.isBooked ? "bg-emerald-100" : status.bg
+          }`}
+        >
+          <View
+            className={`w-2 h-2 rounded-full mr-1.5 ${
+              schedule.isBooked ? "bg-emerald-600" : status.dot
+            }`}
+          />
+          <Text
+            className={`text-xs font-semibold ${
+              schedule.isBooked ? "text-emerald-700" : status.text
+            }`}
+          >
+            {schedule.isBooked ? "Đã đăng ký" : status.label}
           </Text>
         </View>
       </View>
@@ -91,7 +103,7 @@ export default function ClassCard({
           </Text>
         </View>
         <Text className="text-xs text-gray-500">
-          {spotsLeft}/{schedule.capacity} chỗ
+          {schedule.enrolled}/{schedule.capacity} học viên
         </Text>
       </View>
 

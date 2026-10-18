@@ -26,13 +26,21 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { UserRole } from "../../common/enums/user-role.enum";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { MemberPackageSettingsService } from '../packages/member-package-settings.service';
+import { PackagePreferencesDto } from '../packages/dto/member-package-settings.dto';
 
 @ApiTags("Members")
 @ApiBearerAuth("access-token")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("members")
 export class MembersController {
-  constructor(private readonly membersService: MembersService) {}
+  constructor(private readonly membersService: MembersService, private readonly packageSettings: MemberPackageSettingsService) {}
+
+  @Patch('me/packages/:id/preferences')
+  @Roles(UserRole.MEMBER)
+  updatePreferences(@Param('id', ParseUUIDPipe) id: string, @Body() dto: PackagePreferencesDto, @CurrentUser('id') userId: string) {
+    return this.packageSettings.update(id, dto, userId);
+  }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST, UserRole.INSTRUCTOR)

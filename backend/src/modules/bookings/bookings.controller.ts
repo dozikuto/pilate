@@ -20,6 +20,7 @@ import {
   CreateBookingDto,
   CancelBookingDto,
   UpdateBookingStatusDto,
+  BookPackageSchedulesDto,
 } from "./dto/create-booking.dto";
 import { PaginationDto } from "../../common/dto/pagination.dto";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -59,6 +60,18 @@ export class BookingsController {
   @ApiOperation({ summary: "Create a new booking" })
   create(@Body() dto: CreateBookingDto, @CurrentUser() user: any) {
     return this.bookingsService.create(dto, user);
+  }
+
+  @Post("package-schedules")
+  @Roles(UserRole.MEMBER)
+  @ApiOperation({
+    summary: "Đặt nhiều buổi và trừ buổi từ một gói, trong cùng giao dịch",
+  })
+  bookPackageSchedules(
+    @Body() dto: BookPackageSchedulesDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.bookingsService.bookPackageSchedules(dto, user);
   }
 
   @Patch(":id/cancel")

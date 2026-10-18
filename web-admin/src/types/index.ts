@@ -11,7 +11,7 @@ export interface LoginResponse {
     id: string
     name: string
     email: string
-    role: 'admin' | 'manager' | 'instructor'
+    role: 'admin' | 'manager' | 'instructor' | 'receptionist'
     avatar?: string
   }
 }
@@ -45,6 +45,7 @@ export interface Member {
   address?: string
   avatar?: string
   healthNotes?: string
+  goals?: string
   emergencyContact?: string
   emergencyPhone?: string
   joinDate: string
@@ -65,25 +66,33 @@ export interface CreateMemberDto {
   gender?: 'male' | 'female' | 'other'
   address?: string
   healthNotes?: string
+  goals?: string
   emergencyContact?: string
   emergencyPhone?: string
 }
 
 export interface UpdateMemberDto extends Partial<CreateMemberDto> {}
 
-export type PackageType = 'session' | 'monthly' | 'yearly'
+export type PackageType = 'session_based' | 'time_based' | 'unlimited' | 'session' | 'monthly' | 'yearly'
+export type PrivateSessionType = 'private_1v1' | 'semi_private_1v2' | 'small_group_1v3' | 'small_group_1v4'
 export type PackageStatus = 'active' | 'inactive'
 
 export interface Package {
   id: string
   name: string
+  catalogCode?: string | null
   type: PackageType
   sessions?: number
+  totalSessions?: number
   durationDays?: number
   price: number
   description?: string
   features: string[]
   status: PackageStatus
+  isActive?: boolean
+  privateSessionEnabled?: boolean
+  privateSessionType?: PrivateSessionType
+  privateSessionDurationMinutes?: number
   color?: string
   createdAt: string
   updatedAt: string
@@ -100,10 +109,23 @@ export interface CreatePackageDto {
   features?: string[]
   color?: string
   isActive?: boolean
+  privateSessionEnabled?: boolean
+  privateSessionType?: PrivateSessionType
+  privateSessionDurationMinutes?: number
 }
 
 export interface MemberPackage {
   id: string
+  attendedSessions?: number
+  reservedSessions?: number
+  forfeitedSessions?: number
+  otherUsedSessions?: number
+  privateSessionEnabled?: boolean
+  privateSessionType?: PrivateSessionType
+  preferredInstructorId?: string | null
+  preferredInstructor?: { id: string; fullName: string } | null
+  duoPartnerPackageId?: string | null
+  duoPartner?: { packageId: string; memberId: string; fullName: string; packageName: string } | null
   memberId: string
   packageId: string
   packageName: string
@@ -115,7 +137,7 @@ export interface MemberPackage {
   endDate?: string
   purchaseDate: string
   price: number
-  status: 'active' | 'expired' | 'cancelled'
+  status: 'active' | 'expired' | 'cancelled' | 'suspended'
 }
 
 export type InstructorStatus = 'active' | 'inactive'
@@ -206,7 +228,7 @@ export interface CreateScheduleDto {
   recurrenceEndDate?: string
 }
 
-export type BookingStatus = 'confirmed' | 'cancelled' | 'attended' | 'no-show'
+export type BookingStatus = 'confirmed' | 'cancelled' | 'attended' | 'no-show' | 'waitlisted'
 
 export interface Booking {
   id: string
@@ -229,7 +251,7 @@ export interface CheckIn {
   className?: string
   checkInTime: string
   checkOutTime?: string
-  method: 'qr' | 'manual' | 'card'
+  method: 'qr' | 'manual' | 'card' | 'face_id'
 }
 
 export type PaymentMethod = 'cash' | 'bank_transfer' | 'card' | 'momo' | 'vnpay'
@@ -255,22 +277,6 @@ export interface CreateTransactionDto {
   packageId: string
   amount: number
   paymentMethod: PaymentMethod
-  notes?: string
-}
-
-export type EquipmentStatus = 'good' | 'maintenance' | 'broken'
-
-export interface Equipment {
-  id: string
-  name: string
-  category: string
-  brand?: string
-  model?: string
-  quantity: number
-  purchaseDate?: string
-  lastMaintenanceDate?: string
-  nextMaintenanceDate?: string
-  status: EquipmentStatus
   notes?: string
 }
 

@@ -20,5 +20,4 @@ export class UpdateSystemConfigDto {
   @IsOptional() @IsInt() @Min(0) @Max(168) cancelHoursLimit?: number;
   @IsOptional() @IsBoolean() autoPromoteWaitlist?: boolean;
   @IsOptional() @IsBoolean() vietqrEnabled?: boolean;
-  @IsOptional() @IsBoolean() zaloOaEnabled?: boolean;
 }

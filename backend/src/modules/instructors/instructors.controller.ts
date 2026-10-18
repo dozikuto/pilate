@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards,
+  Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InstructorsService } from './instructors.service';
@@ -9,6 +9,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Instructors')
 @ApiBearerAuth('access-token')
@@ -21,6 +22,22 @@ export class InstructorsController {
   @ApiOperation({ summary: 'Get all instructors' })
   findAll(@Query() pagination: PaginationDto) {
     return this.instructorsService.findAll(pagination);
+  }
+
+  @Get('options')
+  @ApiOperation({ summary: 'Danh sách HLV cho lịch học và đánh giá' })
+  listOptions() {
+    return this.instructorsService.listInstructors();
+  }
+
+  @Get(':userId/week')
+  @ApiOperation({ summary: 'Xem lịch lớp theo HLV trong 7 ngày' })
+  getWeek(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query('weekStart') weekStart?: string,
+    @CurrentUser('id') currentUserId?: string,
+  ) {
+    return this.instructorsService.getInstructorWeek(userId, weekStart, currentUserId);
   }
 
   @Get(':id')

@@ -52,7 +52,7 @@ api.interceptors.response.use(
         }
         if (payload.items && !payload.data) {
           payload.data = payload.items.map((item: any) => {
-            if (item && item.user) {
+            if (item && item.user && !item.name) {
               const activePkg =
                 item.memberPackages?.find((mp: any) => mp.status === 'active') ||
                 item.memberPackages?.[0]

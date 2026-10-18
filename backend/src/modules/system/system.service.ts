@@ -11,7 +11,6 @@ import { randomUUID } from "crypto";
 import { SystemSetting } from "../../entities/system-setting.entity";
 import { UpdateSystemConfigDto } from "./dto/system-config.dto";
 import { AuditLog } from "../../entities/audit-log.entity";
-import { PaginationDto, paginate } from "../../common/dto/pagination.dto";
 
 @Injectable()
 export class SystemService {
@@ -20,28 +19,6 @@ export class SystemService {
     @InjectRepository(AuditLog)
     private auditLogsRepository: Repository<AuditLog>,
   ) {}
-
-  async getAuditLogs(pagination: PaginationDto) {
-    const qb = this.auditLogsRepository
-      .createQueryBuilder("log")
-      .leftJoinAndSelect("log.user", "user");
-
-    if (pagination.search) {
-      qb.where(
-        "log.action ILIKE :search OR log.resource ILIKE :search OR log.details ILIKE :search",
-        {
-          search: `%${pagination.search}%`,
-        },
-      );
-    }
-
-    qb.skip(pagination.skip)
-      .take(pagination.limit)
-      .orderBy("log.createdAt", pagination.order || "DESC");
-
-    const [items, total] = await qb.getManyAndCount();
-    return paginate(items, total, pagination);
-  }
 
   async recordLog(
     action: string,
@@ -213,6 +190,19 @@ export class SystemService {
             " RESTART IDENTITY",
         );
         for (const meta of ordered) {
+          // Restore nullable references within a table after all its rows exist
+          // (for example, two member packages that point to one another).
+          const selfColumns: string[] = [
+            ...new Set<string>(
+              meta.foreignKeys
+                .filter(
+                  (fk) =>
+                    fk.referencedEntityMetadata === meta &&
+                    fk.columns.every((c) => c.isNullable),
+                )
+                .flatMap((fk) => fk.columns.map((c) => c.databaseName)),
+            ),
+          ];
           for (const row of snapshot.tables[meta.tableName]) {
             const columns = Object.keys(row);
             await manager.query(
@@ -223,7 +213,23 @@ export class SystemService {
                 ") VALUES (" +
                 columns.map((_, i) => "$" + (i + 1)).join(",") +
                 ")",
-              columns.map((c) => row[c]),
+              columns.map((c) => (selfColumns.includes(c) ? null : row[c])),
+            );
+          }
+          for (const row of snapshot.tables[meta.tableName]) {
+            const deferred = selfColumns.filter((c) => row[c] !== null);
+            if (!deferred.length) continue;
+            const keys = meta.primaryColumns.map((c) => c.databaseName);
+            await manager.query(
+              "UPDATE " +
+                quote(meta.tableName) +
+                " SET " +
+                deferred.map((c, i) => quote(c) + " = $" + (i + 1)).join(", ") +
+                " WHERE " +
+                keys
+                  .map((c, i) => quote(c) + " = $" + (deferred.length + i + 1))
+                  .join(" AND "),
+              [...deferred.map((c) => row[c]), ...keys.map((c) => row[c])],
             );
           }
         }
@@ -259,7 +265,6 @@ export class SystemService {
       cancelHoursLimit: 2,
       autoPromoteWaitlist: true,
       vietqrEnabled: true,
-      zaloOaEnabled: true,
       version: "1.2.0",
       ...(stored?.value || {}),
     };

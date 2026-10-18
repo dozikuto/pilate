@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -78,13 +79,14 @@ export class CheckInsService {
     });
   }
 
-  async manualCheckIn(dto: ManualCheckInDto, processorId?: string) {
+  async manualCheckIn(dto: ManualCheckInDto, processorId?: string, instructorId?: string) {
     return this.processCheckIn({
       memberId: dto.memberId,
       scheduleId: dto.scheduleId,
       bookingId: dto.bookingId,
       method: CheckInMethod.MANUAL,
       processorId,
+      instructorId,
     });
   }
 
@@ -94,6 +96,7 @@ export class CheckInsService {
     bookingId?: string;
     method: CheckInMethod;
     processorId?: string;
+    instructorId?: string;
   }) {
     if (
       !isUUID(params.memberId) ||
@@ -119,12 +122,10 @@ export class CheckInsService {
             where: { id: params.scheduleId },
             lock: { mode: "pessimistic_write" },
           });
-        if (
-          !schedule ||
-          schedule.status === ScheduleStatus.CANCELLED ||
-          schedule.status === ScheduleStatus.COMPLETED
-        )
+        if (!schedule || schedule.status === ScheduleStatus.CANCELLED)
           throw new BadRequestException("Lịch không thể check-in");
+        if (params.instructorId && schedule.instructorId !== params.instructorId)
+          throw new ForbiddenException("Bạn chỉ được điểm danh ca dạy của mình");
       }
       const member = await members.findOne({
         where: { id: params.memberId },
@@ -223,9 +224,11 @@ export class CheckInsService {
         checkIns.create({
           memberId: member.id,
           bookingId: booking?.id,
+          memberPackageId: mp.id,
           scheduleId,
           method: params.method,
           processedById: params.processorId,
+          checkInTime: new Date(),
         }),
       );
       return {

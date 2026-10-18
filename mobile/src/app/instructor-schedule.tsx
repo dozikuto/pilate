@@ -5,8 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
-  TextInput,
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,32 +14,13 @@ import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import {
   useInstructorOptions,
   useInstructorWeek,
-  useMyPrivateRequests,
-  useRequestPrivateSession,
-  useCancelPrivateRequest,
-  type FreeSlot,
-  type PrivateSessionType,
   type WeekClass,
 } from "@/hooks/useInstructorSchedule";
-import { useBookClass, useCancelBooking } from "@/hooks/useSchedules";
+import { useCancelBooking } from "@/hooks/useSchedules";
 import { formatTime } from "@/lib/utils";
 import { notifyAlert, confirmAlert } from "@/lib/alert";
 
 const WEEKDAYS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-
-const SESSION_TYPES: { value: PrivateSessionType; label: string; desc: string }[] = [
-  { value: "private_1v1", label: "1 vs 1", desc: "Kèm riêng 1 học viên" },
-  { value: "semi_private_1v2", label: "1 vs 2", desc: "Tập cùng 1 người" },
-  { value: "small_group_1v3", label: "1 vs 3", desc: "Nhóm nhỏ 3 người" },
-  { value: "small_group_1v4", label: "1 vs 4", desc: "Nhóm nhỏ 4 người" },
-];
-
-const REQUEST_STATUS: Record<string, { label: string; cls: string }> = {
-  pending: { label: "Chờ duyệt", cls: "bg-amber-100 text-amber-700" },
-  approved: { label: "Đã xác nhận", cls: "bg-emerald-100 text-emerald-700" },
-  rejected: { label: "Bị từ chối", cls: "bg-red-100 text-red-700" },
-  cancelled: { label: "Đã hủy", cls: "bg-gray-100 text-gray-500" },
-};
 
 function toISODate(date: Date): string {
   const y = date.getFullYear();
@@ -70,10 +49,6 @@ export default function InstructorScheduleScreen() {
   const [weekStart, setWeekStart] = useState(today);
   const [selectedDate, setSelectedDate] = useState(today);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [requestSlot, setRequestSlot] = useState<FreeSlot | null>(null);
-  const [sessionType, setSessionType] = useState<PrivateSessionType>("private_1v1");
-  const [note, setNote] = useState("");
-
   const { data: instructors, isLoading: loadingInstructors } = useInstructorOptions();
   const {
     data: week,
@@ -81,12 +56,8 @@ export default function InstructorScheduleScreen() {
     isFetching,
     refetch,
   } = useInstructorWeek(instructorUserId, weekStart);
-  const { data: myRequests, refetch: refetchRequests } = useMyPrivateRequests();
 
-  const bookMutation = useBookClass();
   const cancelBookingMutation = useCancelBooking();
-  const requestMutation = useRequestPrivateSession();
-  const cancelRequestMutation = useCancelPrivateRequest();
 
   useEffect(() => {
     if (!instructorUserId && instructors && instructors.length > 0) {
@@ -97,21 +68,12 @@ export default function InstructorScheduleScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refetch();
-      refetchRequests();
-    }, [refetch, refetchRequests])
+    }, [refetch])
   );
 
   const selectedDay = useMemo(
     () => week?.days.find((d) => d.date === selectedDate) ?? week?.days[0],
     [week, selectedDate]
-  );
-
-  const instructorRequests = useMemo(
-    () =>
-      (myRequests ?? []).filter(
-        (r) => r.instructor?.userId === instructorUserId && r.status !== "cancelled"
-      ),
-    [myRequests, instructorUserId]
   );
 
   const currentInstructor = instructors?.find((i) => i.userId === instructorUserId);
@@ -124,17 +86,7 @@ export default function InstructorScheduleScreen() {
   }
 
   async function handleBook(cls: WeekClass) {
-    setLoadingId(cls.id);
-    try {
-      await bookMutation.mutateAsync(cls.id);
-      await refetch();
-      notifyAlert("Thành công", `Đã đặt chỗ lớp ${cls.className}.`);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? "Đặt chỗ thất bại.";
-      notifyAlert("Lỗi", Array.isArray(msg) ? msg[0] : msg);
-    } finally {
-      setLoadingId(null);
-    }
+    router.push({ pathname: '/(tabs)/schedule', params: { instructorId: instructorUserId, date: cls.startTime.slice(0, 10), scheduleId: cls.id } });
   }
 
   function handleCancelBooking(cls: WeekClass) {
@@ -157,48 +109,6 @@ export default function InstructorScheduleScreen() {
       "Hủy chỗ",
       "Giữ lại"
     );
-  }
-
-  function openRequest(slot: FreeSlot) {
-    if (slot.myRequestStatus) {
-      notifyAlert("Đã gửi đề nghị", "Bạn đã đề nghị khung giờ này, vui lòng chờ xác nhận.");
-      return;
-    }
-    setSessionType("private_1v1");
-    setNote("");
-    setRequestSlot(slot);
-  }
-
-  async function submitRequest() {
-    if (!requestSlot || !instructorUserId) return;
-    try {
-      await requestMutation.mutateAsync({
-        instructorUserId,
-        startTime: requestSlot.startTime,
-        endTime: requestSlot.endTime,
-        sessionType,
-        note: note.trim(),
-      });
-      setRequestSlot(null);
-      notifyAlert(
-        "Đã gửi đề nghị",
-        "Studio sẽ xác nhận lịch tập riêng với huấn luyện viên và phản hồi cho bạn sớm nhất."
-      );
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? "Gửi đề nghị thất bại.";
-      notifyAlert("Lỗi", Array.isArray(msg) ? msg[0] : msg);
-    }
-  }
-
-  function cancelRequest(id: string) {
-    confirmAlert("Hủy đề nghị", "Bạn muốn hủy đề nghị tập riêng này?", async () => {
-      try {
-        await cancelRequestMutation.mutateAsync(id);
-      } catch (err: any) {
-        const msg = err?.response?.data?.message ?? "Hủy thất bại.";
-        notifyAlert("Lỗi", Array.isArray(msg) ? msg[0] : msg);
-      }
-    });
   }
 
   function renderClass(cls: WeekClass) {
@@ -255,7 +165,7 @@ export default function InstructorScheduleScreen() {
             ) : cls.isFull ? (
               <View className="bg-gray-50 rounded-xl py-2.5 px-3">
                 <Text className="text-gray-500 text-xs text-center">
-                  Lớp đã đủ người. Bạn có thể chọn khung giờ trống bên dưới để đề nghị tập riêng.
+                  Lớp đã đủ người. Vui lòng chọn lớp hoặc thời gian khác.
                 </Text>
               </View>
             ) : (
@@ -287,7 +197,7 @@ export default function InstructorScheduleScreen() {
           <View className="flex-1">
             <Text className="text-white text-xl font-bold">Lịch theo huấn luyện viên</Text>
             <Text className="text-blue-200 text-xs mt-0.5">
-              Xem lịch dạy trong tuần, chỗ trống và đề nghị tập riêng
+              Xem lịch dạy trong tuần và đăng ký lớp còn chỗ
             </Text>
           </View>
         </View>
@@ -339,7 +249,6 @@ export default function InstructorScheduleScreen() {
             refreshing={isFetching && !loadingWeek}
             onRefresh={() => {
               refetch();
-              refetchRequests();
             }}
             tintColor="#1A3A5C"
           />
@@ -431,164 +340,12 @@ export default function InstructorScheduleScreen() {
                 </View>
               )}
 
-              <View className="mt-3 mb-2 flex-row items-center">
-                <Ionicons name="time-outline" size={18} color="#1A3A5C" />
-                <Text className="text-gray-800 font-bold text-base ml-1.5">
-                  Giờ trống - đề nghị tập riêng
-                </Text>
-              </View>
-              <Text className="text-gray-500 text-xs mb-3">
-                Chọn một khung giờ HLV đang rảnh để gửi đề nghị tập riêng (1 vs 1 đến 1 vs 4).
-              </Text>
-              {selectedDay && selectedDay.freeSlots.length > 0 ? (
-                <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                  {selectedDay.freeSlots.map((slot) => {
-                    const requested = Boolean(slot.myRequestStatus);
-                    return (
-                      <TouchableOpacity
-                        key={slot.startTime}
-                        onPress={() => openRequest(slot)}
-                        className={`px-3 py-2 rounded-xl border ${
-                          requested
-                            ? "bg-amber-50 border-amber-300"
-                            : "bg-white border-emerald-300"
-                        }`}
-                      >
-                        <Text
-                          className={`text-sm font-semibold ${
-                            requested ? "text-amber-700" : "text-emerald-700"
-                          }`}
-                        >
-                          {slot.label}
-                        </Text>
-                        {requested && (
-                          <Text className="text-[10px] text-amber-600">
-                            {REQUEST_STATUS[slot.myRequestStatus!]?.label}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ) : (
-                <Text className="text-gray-400 text-sm">Không còn khung giờ trống trong ngày này.</Text>
-              )}
-
-              {instructorRequests.length > 0 && (
-                <View className="mt-6">
-                  <Text className="text-gray-800 font-bold text-base mb-2">
-                    Đề nghị tập riêng của bạn
-                  </Text>
-                  {instructorRequests.map((r) => {
-                    const st = REQUEST_STATUS[r.status];
-                    const type = SESSION_TYPES.find((t) => t.value === r.sessionType);
-                    const start = new Date(r.startTime);
-                    return (
-                      <View key={r.id} className="bg-white rounded-2xl p-3 mb-2 border border-gray-100">
-                        <View className="flex-row justify-between items-center">
-                          <Text className="text-gray-800 font-semibold">
-                            {WEEKDAYS[start.getDay()]} {displayDate(toISODate(start))} ·{" "}
-                            {formatTime(r.startTime)} - {formatTime(r.endTime)}
-                          </Text>
-                          <View className={`px-2 py-0.5 rounded-full ${st.cls.split(" ")[0]}`}>
-                            <Text className={`text-xs font-semibold ${st.cls.split(" ")[1]}`}>
-                              {st.label}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text className="text-gray-500 text-xs mt-1">
-                          Hình thức: {type?.label ?? r.sessionType}
-                          {r.note ? ` · ${r.note}` : ""}
-                        </Text>
-                        {r.responseNote ? (
-                          <Text className="text-[#1A3A5C] text-xs mt-1">Phản hồi: {r.responseNote}</Text>
-                        ) : null}
-                        {(r.status === "pending" || r.status === "approved") && (
-                          <TouchableOpacity onPress={() => cancelRequest(r.id)} className="mt-2 self-start">
-                            <Text className="text-red-600 text-xs font-semibold">Hủy đề nghị</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
             </View>
           </>
         )}
         <View className="h-8" />
       </ScrollView>
 
-      <Modal
-        visible={Boolean(requestSlot)}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setRequestSlot(null)}
-      >
-        <View className="flex-1 bg-black/40 justify-end">
-          <View className="bg-white rounded-t-3xl p-5">
-            <View className="flex-row justify-between items-center mb-1">
-              <Text className="text-lg font-bold text-[#1A3A5C]">Đề nghị tập riêng</Text>
-              <TouchableOpacity onPress={() => setRequestSlot(null)}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-            {requestSlot && (
-              <Text className="text-gray-600 text-sm mb-4">
-                HLV {week?.instructor.fullName} · {displayDate(selectedDay?.date ?? "")} ·{" "}
-                {requestSlot.label}
-              </Text>
-            )}
-
-            <Text className="text-gray-700 font-semibold text-sm mb-2">Hình thức tập</Text>
-            <View className="flex-row flex-wrap mb-4" style={{ gap: 8 }}>
-              {SESSION_TYPES.map((t) => {
-                const active = t.value === sessionType;
-                return (
-                  <TouchableOpacity
-                    key={t.value}
-                    onPress={() => setSessionType(t.value)}
-                    className={`px-3 py-2 rounded-xl border ${
-                      active ? "bg-[#1A3A5C] border-[#1A3A5C]" : "bg-white border-gray-200"
-                    }`}
-                    style={{ width: "48%" }}
-                  >
-                    <Text className={`font-bold ${active ? "text-white" : "text-gray-800"}`}>
-                      {t.label}
-                    </Text>
-                    <Text className={`text-xs ${active ? "text-blue-100" : "text-gray-500"}`}>
-                      {t.desc}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text className="text-gray-700 font-semibold text-sm mb-2">Ghi chú cho HLV</Text>
-            <TextInput
-              value={note}
-              onChangeText={setNote}
-              placeholder="VD: Muốn tập phục hồi lưng, đi cùng 1 bạn..."
-              multiline
-              className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-800 min-h-[70px]"
-              placeholderTextColor="#9CA3AF"
-              style={{ textAlignVertical: "top" }}
-            />
-
-            <TouchableOpacity
-              onPress={submitRequest}
-              disabled={requestMutation.isPending}
-              className="bg-[#C0392B] rounded-xl py-3.5 items-center mt-5"
-            >
-              {requestMutation.isPending ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-white font-bold">Gửi đề nghị</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

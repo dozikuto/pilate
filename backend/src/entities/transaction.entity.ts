@@ -9,6 +9,7 @@ import {
 import { Member } from "./member.entity";
 import { User } from "./user.entity";
 import { Branch } from "./branch.entity";
+import { Package } from "./package.entity";
 import { PaymentMethod } from "../common/enums/payment-method.enum";
 import { PaymentStatus } from "../common/enums/payment-status.enum";
 
@@ -69,6 +70,10 @@ export class Transaction {
   @ManyToOne(() => Member)
   @JoinColumn({ name: "member_id" })
   member: Member;
+
+  @ManyToOne(() => Package, { nullable: true })
+  @JoinColumn({ name: "package_id" })
+  package: Package;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: "processed_by" })

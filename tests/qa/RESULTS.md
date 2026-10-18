@@ -1,4 +1,47 @@
-# Kết quả kiểm thử và sửa lỗi — 13/10/2026
+# Kết quả luồng gói tập, HLV ưu tiên và tập đôi — 18/10/2026
+
+- API NestJS + PostgreSQL: **173/173 ca đạt**, gồm 11 ca mới cho số buổi, HLV ưu tiên và ghép đôi. Hai script cũ đạt **34/34** và **11/11**; tổng **218/218**. Database tạm đã được xóa. Báo cáo: `backend/.qa-temp/package-flow-final/integration-results.json`.
+- Backend TypeScript, TypeScript web học viên và build web quản trị đạt; Vite còn cảnh báo kích thước bundle hiện có.
+- Đã thử trên giao diện với dữ liệu riêng: chọn gói 1:1, lưu HLV ưu tiên, lọc 18:00, chọn 5 thứ Hai liên tiếp, xem lại/xác nhận, đối chiếu admin hiển thị 0 đã tập / 5 đã đặt / 0 còn có thể đặt.
+- Admin ghép hai gói 1:2; học viên thấy đúng người tập cùng, đặt ca đôi và còn 4/5 buổi. Giao diện chặn bỏ ghép khi có lịch sắp tới và giữ nguyên dữ liệu đã lưu. Bộ lọc mua gói 1:2 chỉ hiển thị gói phù hợp.
+- Kiểm thử khôi phục backup phát hiện liên kết hai gói tham chiếu lẫn nhau; đã sửa khôi phục tham chiếu sau khi nạp đủ các dòng, trong cùng transaction. Kiểm thử khôi phục thành công và rollback khi dữ liệu lỗi đều đạt.
+- Ảnh bước xác nhận: `backend/.qa-temp/package-flow-ui/booking-review.png`. Hướng dẫn sử dụng: `docs/Luong_goi_tap_va_dat_lich.md`.
+
+## Kết quả tạo gói trực tiếp và gỡ đề nghị — 15/10/2026
+
+Kiểm thử NestJS HTTP với PostgreSQL thật đạt **130/130 ca hồi quy**, `test-admin-crud.js` đạt **34/34**, `test-usecases.js` đạt **11/11**. Tổng cộng **175/175 ca đạt**, exit code 0; database tạm đã được xóa. JSON/log ở `backend/.qa-temp/direct-training-results/`.
+
+- Tạo/sửa gói chọn trực tiếp hình thức tập lớp hoặc tập riêng 1:1–1:4; cấu hình thời lượng, giá, số buổi và hạn dùng. Kiểm thử lưu/đọc đủ bốn hình thức, đổi về tập lớp, validation và quyền admin đều đạt.
+- Hình thức/thời lượng được trả đúng trong gói hội viên để ứng dụng học viên hiển thị.
+- Đã gỡ tab, màn hình, thao tác gửi/duyệt/hủy và API đề nghị. Các API cũ trả 404 cho cả bốn vai trò. Bản ghi cũ giữ trong database để tương thích sao lưu nhưng không còn chặn xếp lịch hoặc đặt lớp.
+- Lịch HLV chuyển sang API Instructors; xem lịch, đặt lớp, thanh toán, báo cáo và backup/restore tiếp tục đạt.
+- Backend/web build và TypeScript mobile đạt. Web còn cảnh báo kích thước bundle.
+- Đã kiểm tra giao diện thật: trang Gói tập không còn tab đề nghị; Tạo Gói Mới có Hình thức tập với tập lớp và 1:1–1:4, chọn tập riêng sẽ hiện thời lượng. Hủy biểu mẫu thử, không tạo gói vào dữ liệu hiện có. Ba server 3001, 5173, 8081 đều trả HTTP 200.
+
+## Kết quả phiên bản có đề nghị trước khi gỡ — 15/10/2026
+
+Kiểm thử NestJS HTTP với PostgreSQL thật đạt **137/137 ca hồi quy**, `test-admin-crud.js` đạt **34/34**, `test-usecases.js` đạt **11/11**. Tổng cộng **182/182 ca đạt**, exit code 0. Database tạm đã được xóa sau khi chạy. Báo cáo JSON và log ở `backend/.qa-temp/package-private-results/`.
+
+- Gói tập lưu riêng thiết lập bật/tắt tập riêng, hình thức 1:1–1:4 và thời lượng 15–180 phút; tạo/sửa đều được kiểm tra dữ liệu và quyền admin.
+- Đề nghị bắt buộc chọn gói đang hoạt động đã mở tập riêng. Backend áp dụng hình thức/thời lượng theo gói và chặn thông số gửi sai. Khung giờ tránh trùng lớp và không vượt giờ đóng cửa. Đề nghị cũ không gắn gói vẫn đọc được.
+- Đã kiểm tra trực tiếp trên trình duyệt: nút Cấu hình gói, bật tập riêng, chọn 1:2 và 45 phút trong biểu mẫu, cùng tab Đề nghị tập riêng trong trang Gói tập. Hủy thay đổi biểu mẫu sau khi kiểm tra, không thay cấu hình các gói hiện có. Hộp thoại cuộn được trên màn hình nhỏ.
+- Backend build và TypeScript mobile đạt; web build đạt. Kiểm thử API xác nhận lưu và đọc lại dữ liệu; chưa thực hiện gửi đề nghị qua giao diện mobile.
+- Backend, web quản trị và mobile web đang chạy ở các cổng 3001, 5173, 8081 và đã kiểm tra phản hồi HTTP 200.
+
+## Kết quả sau khi gỡ use case ngày 15/10/2026
+
+Đã gỡ UC22, UC23, UC26, UC31 và UC34 khỏi API và giao diện. Kiểm thử với NestJS HTTP và PostgreSQL thật đạt **128/128 ca hồi quy**, `test-admin-crud.js` đạt **34/34**, `test-usecases.js` đạt **11/11**. Tổng cộng **173/173 ca đạt**, exit code 0. Database tạm đã được xóa sau khi chạy; dữ liệu hiện có không bị sửa.
+
+- Các endpoint chi nhánh/phòng, thiết bị, sản phẩm/tồn kho, thông báo và tra cứu nhật ký đã bỏ trả 404 cho cả bốn vai trò.
+- `GET /classes/rooms` chỉ đọc danh mục phòng đang hoạt động, loại phòng/cơ sở ngừng dùng và yêu cầu đăng nhập. Không thể thêm, sửa, xóa phòng qua đường dẫn này. Đã sửa kiểm tra UUID trên API xóa lớp để đường dẫn danh mục phòng không bị nhận nhầm thành ID lớp.
+- Xếp lịch, đặt/hủy lớp, kiểm tra sức chứa, thanh toán, báo cáo, sao lưu/khôi phục tiếp tục đạt. Phản hồi HLV được lưu và đọc lại trong hồ sơ tiến độ.
+- Backend và web build thành công; TypeScript mobile đạt. Web còn cảnh báo kích thước bundle. Lượt này chưa kiểm thử tương tác giao diện trên trình duyệt/điện thoại.
+
+Đã cập nhật README và đặc tả Markdown theo phạm vi hiện tại. Các tệp Word vẫn giữ bản thiết kế ban đầu; môi trường thiếu LibreOffice để render và kiểm tra bố cục theo quy trình tài liệu.
+
+Chạy lại từ thư mục `backend`: `npm run test:qa`. Báo cáo JSON và log của lượt này ở `backend/.qa-temp/removed-usecases-results/` (không đưa vào Git).
+
+## Kết quả lịch sử ngày 13/10/2026 trước khi thu hẹp phạm vi
 
 Lệnh `npm run test:qa` đã chạy thành công với PostgreSQL thật: **132/132 ca regression đạt**, `test-admin-crud.js` **42/42 đạt**, `test-usecases.js` **12/12 đạt**. Tổng cộng **186 lượt kiểm thử đạt**, exit code 0. Database test đã được xóa sau khi chạy.
 

@@ -6,6 +6,7 @@ import { Booking } from './booking.entity';
 import { Member } from './member.entity';
 import { ClassSchedule } from './class-schedule.entity';
 import { User } from './user.entity';
+import { MemberPackage } from './member-package.entity';
 
 export enum CheckInMethod {
   QR = 'qr',
@@ -20,6 +21,13 @@ export class CheckIn {
 
   @Column({ name: 'booking_id', nullable: true })
   bookingId: string;
+
+  @Column({ name: 'member_package_id', type: 'uuid', nullable: true })
+  memberPackageId: string | null;
+
+  @ManyToOne(() => MemberPackage, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'member_package_id' })
+  memberPackage: MemberPackage;
 
   @Column({ name: 'member_id' })
   memberId: string;

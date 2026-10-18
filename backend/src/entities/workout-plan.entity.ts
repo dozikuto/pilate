@@ -32,6 +32,12 @@ export class WorkoutPlan {
   @Column({ type: 'text', nullable: true })
   feedback: string;
 
+  @Column({ name: 'core_score', type: 'decimal', precision: 3, scale: 1, nullable: true })
+  coreScore: number;
+
+  @Column({ name: 'flexibility_score', type: 'decimal', precision: 3, scale: 1, nullable: true })
+  flexibilityScore: number;
+
   @ManyToOne(() => Member)
   @JoinColumn({ name: 'member_id' })
   member: Member;

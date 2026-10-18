@@ -21,6 +21,9 @@ export class Member {
   @Column({ nullable: true })
   gender: string;
 
+  @Column({ type: 'text', nullable: true })
+  address: string;
+
   @Column({ name: 'emergency_contact_name', nullable: true })
   emergencyContactName: string;
 

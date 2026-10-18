@@ -61,14 +61,14 @@ export function Modal({
 
       <div
         className={cn(
-          'relative z-10 w-full bg-white rounded-2xl shadow-2xl animate-in',
+          'relative z-10 w-full max-h-[calc(100dvh-2rem)] flex flex-col bg-white rounded-2xl shadow-2xl animate-in',
           sizes[size]
         )}
         onClick={(e) => e.stopPropagation()}
       >
         
         {(title || !hideClose) && (
-          <div className="flex items-start justify-between p-6 pb-4 border-b border-gray-100">
+          <div className="flex shrink-0 items-start justify-between p-6 pb-4 border-b border-gray-100">
             <div>
               {title && (
                 <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
@@ -88,7 +88,7 @@ export function Modal({
           </div>
         )}
 
-        <div className="p-6">{children}</div>
+        <div className="p-6 min-h-0 overflow-y-auto">{children}</div>
       </div>
     </div>
   )

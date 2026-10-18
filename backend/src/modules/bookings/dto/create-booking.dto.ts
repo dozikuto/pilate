@@ -6,6 +6,10 @@ import {
   Min,
   IsUUID,
   IsEnum,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
+  ArrayUnique,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { BookingStatus } from "../../../common/enums/booking-status.enum";
@@ -49,6 +53,23 @@ export class CancelBookingDto {
   @IsString()
   @IsOptional()
   reason?: string;
+}
+
+export class BookPackageSchedulesDto {
+  @ApiProperty({ description: "Gói tập đã mua của học viên" })
+  @IsUUID()
+  memberPackageId: string;
+
+  @ApiProperty({
+    type: [String],
+    description: "Các buổi học cần đặt cùng một lần",
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique()
+  @IsUUID("all", { each: true })
+  scheduleIds: string[];
 }
 
 export class UpdateBookingStatusDto {

@@ -40,6 +40,12 @@ export class Review {
   @Column({ type: 'text', nullable: true })
   comment: string;
 
+  @Column({ type: 'text', nullable: true })
+  reply: string;
+
+  @Column({ name: 'replied_at', type: 'timestamp', nullable: true })
+  repliedAt: Date;
+
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
   user: User;

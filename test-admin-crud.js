@@ -64,7 +64,7 @@ const uniq = Date.now().toString().slice(-6);
   await t('7', 'Tạo lịch học mới', async () => {
     const ins = list(await req('GET', '/instructors'));
     instructorUserId = ins[0]?.userId || ins[0]?.user?.id;
-    const rooms = list(await req('GET', '/rooms').catch(() => []));
+    const rooms = list(await req('GET', '/classes/rooms').catch(() => []));
     roomId = rooms[0]?.id; roomCapacity = rooms[0]?.capacity;
     if (!roomId || !instructorUserId) throw new Error('Thiếu fixture phòng/HLV');
     const start = new Date(Date.now() + (20 + Math.floor(Math.random() * 200)) * 86400000);
@@ -99,15 +99,6 @@ const uniq = Date.now().toString().slice(-6);
     try { await req('DELETE', '/packages/p1'); } catch (e) { if (e.message.startsWith('500')) throw e; return `trả về ${e.message.slice(0, 3)}`; }
   });
 
-  // Sản phẩm
-  let productId;
-  await t('25', 'Danh sách sản phẩm', async () => `${list(await req('GET', '/products')).length} SP`);
-  await t('28', 'Thêm sản phẩm', async () => {
-    const r = await req('POST', '/products', { name: `SP Test ${uniq}`, sku: `SKU${uniq}`, price: 150000, stockQuantity: 10, category: 'accessory', unit: 'cái', description: 't', isActive: true });
-    productId = r.id; return productId;
-  });
-  if (productId) await t('28b', 'Xóa sản phẩm test', async () => { await req('DELETE', `/products/${productId}`); });
-
   // Khuyến mãi / giao dịch / đánh giá
   await t('29', 'Danh sách khuyến mãi', async () => `${list(await req('GET', '/promotions')).length} mã`);
   await t('35', 'Danh sách giao dịch', async () => `${list(await req('GET', '/transactions')).length} GD`);
@@ -122,21 +113,6 @@ const uniq = Date.now().toString().slice(-6);
   });
   await t('44', 'Sửa HLV', async () => { await req('PATCH', `/instructors/${insId}`, { bio: 'đã sửa' }); });
   await t('45', 'Xóa HLV', async () => { await req('DELETE', `/instructors/${insId}`); });
-
-  // Thiết bị
-  let eqId;
-  await t('47', 'Danh sách thiết bị', async () => `${list(await req('GET', '/equipment')).length} TB`);
-  await t('48', 'Thêm thiết bị', async () => {
-    const r = await req('POST', '/equipment', { name: `Reformer Test ${uniq}`, type: 'Reformer', status: 'available', serialNumber: `SN${uniq}` });
-    eqId = r.id; return eqId;
-  });
-  await t('50', 'Lên lịch bảo trì (cập nhật thiết bị)', async () => {
-    await req('PATCH', `/equipment/${eqId}`, { status: 'maintenance', nextMaintenanceDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
-  });
-  await t('51', 'Phát thông báo bảo trì (broadcast)', async () => {
-    await req('POST', '/notifications/broadcast', { title: 'Bảo trì test', message: 'Test broadcast', equipmentName: 'Reformer Test' });
-  });
-  if (eqId) await t('48b', 'Xóa thiết bị test', async () => { await req('DELETE', `/equipment/${eqId}`); });
 
   // Báo cáo
   await t('59', 'Báo cáo theo năm', async () => { await req('GET', `/reports/yearly?year=${new Date().getFullYear()}`); });
@@ -157,7 +133,7 @@ const uniq = Date.now().toString().slice(-6);
   await t('REV', 'Học viên gửi đánh giá có chọn HLV', async () => {
     const m = await req('POST', '/auth/login', { email: 'hang.nguyen@gmail.com', password: 'Member@123' }, null);
     const mt = m.accessToken || m.token;
-    const ins = await req('GET', '/private-sessions/instructors', null, mt);
+    const ins = await req('GET', '/instructors/options', null, mt);
     const target = list(ins)[0];
     await req('POST', '/reviews', { targetType: 'instructor', targetId: target.id, targetName: target.fullName, rating: 5, comment: `test ${uniq}` }, mt);
     const found = list(await req('GET', '/reviews?limit=50')).find((r) => r.comment === `test ${uniq}`);

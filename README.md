@@ -1,81 +1,145 @@
-TAI LIEU HUONG DAN CAI DAT VA KHOI CHAY HE THONG PILATESMS
+# TÀI LIỆU HƯỚNG DẪN CÀI ĐẶT VÀ KHỞI CHẠY HỆ THỐNG PILATESMS
 
-Tai lieu nay danh cho nguoi nhan du an de tu cai dat, cau hinh va van hanh he thong quan ly phong tap PilatesMS tren may tinh ca nhan. He thong gom ba thanh phan chinh: Backend API (NestJS), Web Admin quan ly (React Vite), va Mobile App hoc vien (Expo React Native).
+Tài liệu dành cho người nhận dự án để cài đặt và chạy trên máy của mình. Hệ thống gồm Backend API (NestJS), Web Admin (React Vite) và ứng dụng học viên (Expo React Native, có thể chạy trên trình duyệt).
 
-YEU CAU TRUOC KHI CAI DAT
+Hướng dẫn dưới đây chạy PostgreSQL và Redis bằng Docker, sau đó chạy ba ứng dụng bằng Node.js. Mỗi ứng dụng dùng một cửa sổ terminal riêng.
 
-Nguoi dung can dam bao may tinh da duoc cai dat san cac moi truong sau:
-- Node.js tu phien ban 20 tro len.
-- Docker Desktop de khoi chay co so du lieu PostgreSQL va bo nho dem Redis.
-- Git de quan ly va dong bo ma nguon.
+## YÊU CẦU TRƯỚC KHI CÀI ĐẶT
 
-BUOC 1: TAI MA NGUON VE MAY
+- Node.js 20 trở lên và npm.
+- Git.
+- Docker Desktop đã mở và sẵn sàng chạy Linux containers.
+- Các cổng mặc định còn trống: `5433`, `6379`, `3001`, `5173`, `8081`.
 
-Mo terminal tren may tinh cua ban va thuc hien thao tac tai ma nguon:
+## BƯỚC 1: TẢI MÃ NGUỒN VỀ MÁY
 
-Neu tai ma nguon ve lan dau tien, chay lenh clone de sao chep toan bo du an:
+Lần đầu nhận dự án:
+
+```powershell
 git clone https://github.com/dozikuto/pilate.git
 cd pilate
+```
 
-Neu tren may ban da co san thu muc du an tu truoc va chi muon cap nhat phien ban code moi nhat, chi can chay:
+Nếu đã có bản clone, mở terminal trong thư mục đó và cập nhật sau khi đã lưu các thay đổi riêng:
+
+```powershell
 git pull origin main
+```
 
-BUOC 2: THIET LAP TEP CAU HINH MOI TRUONG
+Các lệnh ở bước 2 và 3 chạy tại thư mục gốc `pilate`, nơi có `docker-compose.yml`.
 
-He thong da duoc toi uu de su dung chung duy nhat mot file cau hinh .env dat tai thu muc goc. Nguoi dung khong can vao tung thu muc con de tao file.
+## BƯỚC 2: THIẾT LẬP TỆP CẤU HÌNH MÔI TRƯỜNG
 
-Tai thu muc goc cua du an, hay chay lenh sao chep file mau:
-- Tren Windows: copy .env.example .env
-- Tren Linux hoac macOS: cp .env.example .env
+Tạo một tệp `.env` tại thư mục gốc từ tệp mẫu. Chỉ sao chép khi chưa có `.env`; giữ cấu hình đang dùng khi cập nhật dự án.
 
-File .env goc nay da duoc cau hinh san thong so chuan de ca ba phan he Backend, Web Admin va Mobile deu tu dong doc duoc.
+Windows PowerShell:
 
-BUOC 3: KHOI DONG CO SO DU LIEU POSTGRESQL VA REDIS
+```powershell
+Copy-Item .env.example .env
+```
 
-Mo terminal tai thu muc goc cua du an va chay lenh sau de Docker khoi chay co so du lieu va Redis:
+Linux hoặc macOS:
 
-docker-compose up -d postgres redis
+```bash
+cp .env.example .env
+```
 
-Sau khi lenh chay xong, co so du lieu PostgreSQL se hoat dong tai cong 5433 va Redis se hoat dong tai cong 6379.
+Backend, Web Admin và ứng dụng học viên đọc cấu hình từ tệp `.env` gốc. Khi chạy các ứng dụng trên cùng một máy, dùng các địa chỉ sau:
 
-BUOC 4: CAI DAT VA KHOI DONG MAY CHU BACKEND
+```dotenv
+PORT=3001
+DB_HOST=localhost
+DB_PORT=5433
+DB_SYNC=true
+REDIS_HOST=localhost
+REDIS_PORT=6379
+VITE_API_URL=http://localhost:3001/api/v1
+EXPO_PUBLIC_API_URL=http://localhost:3001/api/v1
+```
 
-Mo mot cua so terminal moi, di chuyen vao thu muc backend va thuc hien cac lenh:
+Giữ `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `REDIS_PASSWORD` và các khóa còn lại đồng nhất với tệp mẫu và Docker Compose. Cấu hình mẫu và tài khoản ở bên dưới phục vụ chạy thử local. Không đưa `.env` thật lên Git.
 
+`DB_SYNC=true` cho phép TypeORM đồng bộ schema khi chạy local. Khi triển khai với `DB_SYNC=false`, cần kiểm tra và áp dụng các thay đổi schema trước; không coi hướng dẫn local này là quy trình triển khai production.
+
+## BƯỚC 3: KHỞI ĐỘNG POSTGRESQL VÀ REDIS
+
+Mở Docker Desktop, đợi Docker sẵn sàng rồi chạy tại thư mục gốc:
+
+```powershell
+docker compose up -d postgres redis
+docker compose ps
+```
+
+PostgreSQL được truy cập từ máy ở cổng `5433`, Redis ở cổng `6379`. Các volume Docker giữ dữ liệu khi dừng hoặc khởi động lại container. Lệnh này chỉ bật hai dịch vụ dữ liệu; backend và các giao diện được chạy ở những bước tiếp theo.
+
+Nếu báo không kết nối được Docker engine, mở Docker Desktop và đợi engine chạy rồi thực hiện lại. Nếu báo cổng bị chiếm, kiểm tra ứng dụng đang dùng cổng hoặc điều chỉnh cổng cùng cấu hình kết nối tương ứng.
+
+## BƯỚC 4: CÀI ĐẶT VÀ KHỞI ĐỘNG BACKEND
+
+Mở terminal mới tại thư mục gốc dự án:
+
+```powershell
 cd backend
 npm install
+```
+
+**Chỉ với database mới cần dữ liệu demo**, chạy:
+
+```powershell
 npm run seed
+```
+
+Seed tạo tài khoản mẫu cùng danh mục và dữ liệu demo để kiểm tra hệ thống sau cài đặt.
+
+Khởi động API:
+
+```powershell
 npm run start:dev
+```
 
-Lenh npm run seed se tu dong nap toan bo du lieu khoi tao gom tai khoan, lich hoc, phong tap, may tap va goi tap vao co so du lieu.
+- Backend: [http://localhost:3001](http://localhost:3001).
+- Swagger API: [http://localhost:3001/api](http://localhost:3001/api).
+- Tiền tố API nghiệp vụ: `/api/v1`.
 
-Khi may chu backend khoi dong thanh cong, he thong se thong bao lang nghe tai dia chi http://localhost:3001. Ban co the xem tai lieu Swagger API truc tiep tai dia chi http://localhost:3001/api.
+**Với database đã có dữ liệu**, không chạy lại toàn bộ seed chỉ để mở server. Sau khi cài dependencies và kiểm tra cấu hình, chạy `npm run start:dev`.
 
-BUOC 5: CAI DAT VA KHOI DONG GIAO DIEN WEB ADMIN
+## BƯỚC 5: CÀI ĐẶT VÀ KHỞI ĐỘNG WEB ADMIN
 
-Mo mot cua so terminal tiep theo, di chuyen vao thu muc web-admin va chay cac lenh:
+Giữ terminal backend đang chạy. Mở terminal mới tại thư mục gốc:
 
+```powershell
 cd web-admin
 npm install
 npm run dev
+```
 
-Trang quan tri Web Admin se san sang hoat dong tai dia chi http://localhost:5173.
+Mở [http://localhost:5173](http://localhost:5173). Nếu Vite chọn cổng khác vì cổng mặc định bị chiếm, dùng đúng địa chỉ được in trong terminal.
 
-Nguoi dung co the su dung cac tai khoan mau sau day de dang nhap trai nghiem:
-- Tai khoan Quan tri vien: admin@pilatesms.vn voi mat khau Admin@123456
-- Tai khoan Le tan: letan@pilatesms.vn voi mat khau Staff@123
-- Tai khoan Huan luyen vien: coach.lan@pilatesms.vn voi mat khau Coach@123
+Tài khoản demo chỉ có sau khi seed database mới:
 
-BUOC 6: CAI DAT VA KHOI DONG UNG DUNG MOBILE APP
+| Vai trò | Email | Mật khẩu mẫu |
+| --- | --- | --- |
+| Quản trị viên | `admin@pilatesms.vn` | `Admin@123456` |
+| Lễ tân | `letan@pilatesms.vn` | `Staff@123` |
+| Huấn luyện viên | `coach.lan@pilatesms.vn` | `Coach@123` |
 
-Mo mot cua so terminal khac, di chuyen vao thu muc mobile va chay cac lenh:
+## BƯỚC 6: CÀI ĐẶT VÀ KHỞI ĐỘNG ỨNG DỤNG HỌC VIÊN
 
+Giữ backend và Web Admin đang chạy. Mở terminal mới tại thư mục gốc:
+
+```powershell
 cd mobile
 npm install
-npx expo start --web
+npm run web
+```
 
-Ung dung danh cho hoc vien se mo truc tiep tren trinh duyet tai dia chi http://localhost:8081 hoac ban co the su dung ung dung Expo Go tren dien thoai de quet ma QR.
+Mở [http://localhost:8081](http://localhost:8081), hoặc địa chỉ Expo in trong terminal nếu cổng đã thay đổi.
 
-Tai khoan hoc vien mau de dang nhap trai nghiem tren ung dung di dong:
-- Email: hang.nguyen@gmail.com
-- Mat khau: Member@123
+Tài khoản học viên demo sau khi seed:
+
+- Email: `hang.nguyen@gmail.com`.
+- Mật khẩu: `Member@123`.
+
+Nếu thử bằng Expo Go trên điện thoại thật, máy tính và điện thoại cần kết nối mạng phù hợp. Đổi `EXPO_PUBLIC_API_URL` thành IP LAN của máy chạy backend, ví dụ `http://192.168.1.10:3001/api/v1`, rồi khởi động lại Expo. `localhost` trên điện thoại là chính điện thoại, không phải máy tính. Cho phép kết nối tới cổng backend trong firewall nếu cần. Mã QR mở ứng dụng Expo khác với mã QR điểm danh học viên.
+
+Để chạy lại những lần sau, mở Docker và thực hiện bước 3, sau đó chạy ba lệnh khởi động ở bước 4–6 trong ba terminal. Chỉ cần cài lại dependencies khi chúng thay đổi; không cần seed lại. Dừng mỗi ứng dụng bằng `Ctrl+C`; dừng database bằng `docker compose stop postgres redis` tại thư mục gốc khi không sử dụng.

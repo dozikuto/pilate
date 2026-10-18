@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Save, Building2, Bell, Shield, Database, Download, Upload, History } from 'lucide-react'
+import { Save, Building2, CreditCard, Shield, Database, Download, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
+import { Input, NumberInput } from '@/components/ui/Input'
+import { parseNumberInput } from '@/lib/numberInput'
 import toast from 'react-hot-toast'
 import { api } from '@/lib/axios'
 
@@ -10,24 +11,41 @@ export default function SettingsPage() {
   const [studioAddress, setStudioAddress] = useState('')
   const [studioPhone, setStudioPhone] = useState('')
   const [studioEmail, setStudioEmail] = useState('')
-  const [cancelHoursLimit, setCancelHoursLimit] = useState(2)
+  const [cancelHoursLimit, setCancelHoursLimit] = useState('2')
+  const [autoPromoteWaitlist, setAutoPromoteWaitlist] = useState(true)
   const [backups, setBackups] = useState<any[]>([])
   const [selectedBackup, setSelectedBackup] = useState('')
-  const [logs, setLogs] = useState<any[]>([])
   const [busy, setBusy] = useState(false)
 
   async function refresh() {
-    const [config, backupList, logList] = await Promise.all([api.get('/system/config'), api.get('/system/backups'), api.get('/system/logs?limit=20')])
+    const [config, backupList] = await Promise.all([api.get('/system/config'), api.get('/system/backups')])
     const c = config.data
-    setStudioName(c.studioName); setStudioAddress(c.studioAddress ?? c.address); setStudioPhone(c.studioPhone ?? c.hotline); setStudioEmail(c.studioEmail ?? c.email); setCancelHoursLimit(c.cancelHoursLimit)
-    setBackups(backupList.data); setLogs(logList.data.items ?? [])
+    setStudioName(c.studioName)
+    setStudioAddress(c.studioAddress ?? c.address)
+    setStudioPhone(c.studioPhone ?? c.hotline)
+    setStudioEmail(c.studioEmail ?? c.email)
+    setCancelHoursLimit(String(c.cancelHoursLimit ?? 2))
+    setAutoPromoteWaitlist(c.autoPromoteWaitlist !== false)
+    setBackups(backupList.data)
   }
   useEffect(() => { refresh().catch(() => toast.error('Không tải được cấu hình hệ thống')) }, [])
 
   const handleSaveSettings = async () => {
+    const hours = parseNumberInput(cancelHoursLimit)
+    if (!Number.isInteger(hours) || hours < 0 || hours > 168) {
+      toast.error('Thời gian hủy lớp phải là số giờ nguyên từ 0 đến 168')
+      return
+    }
     setBusy(true)
     try {
-      await api.patch('/system/config', { studioName, address: studioAddress, hotline: studioPhone, email: studioEmail, cancelHoursLimit })
+      await api.patch('/system/config', {
+        studioName,
+        address: studioAddress,
+        hotline: studioPhone,
+        email: studioEmail,
+        cancelHoursLimit: hours,
+        autoPromoteWaitlist,
+      })
       await refresh(); toast.success('Đã lưu cấu hình hệ thống')
     } catch (e: any) { toast.error(e?.response?.data?.message || 'Không lưu được cấu hình') }
     finally { setBusy(false) }
@@ -105,10 +123,12 @@ export default function SettingsPage() {
               </div>
             </div>
             <div className="w-28 flex items-center gap-1.5">
-              <Input
-                type="number"
+              <NumberInput
+                aria-label="Thời gian hủy lớp tối thiểu (giờ)"
+                min={0}
+                max={168}
                 value={cancelHoursLimit}
-                onChange={(e) => setCancelHoursLimit(Number(e.target.value))}
+                onValueChange={setCancelHoursLimit}
               />
               <span className="text-xs font-semibold text-gray-500">Giờ</span>
             </div>
@@ -121,31 +141,24 @@ export default function SettingsPage() {
                 Khi có người hủy lớp, tự động chuyển người đầu danh sách chờ sang lớp chính thức
               </div>
             </div>
-            <input type="checkbox" defaultChecked className="w-4 h-4 text-primary rounded" />
+            <input
+              type="checkbox"
+              aria-label="Tự động đôn học viên từ Waitlist"
+              checked={autoPromoteWaitlist}
+              onChange={(e) => setAutoPromoteWaitlist(e.target.checked)}
+              className="w-4 h-4 text-primary rounded cursor-pointer"
+            />
           </div>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
         <div className="flex items-center gap-2 text-primary font-bold text-base pb-3 border-b border-gray-100">
-          <Bell className="w-5 h-5" />
-          <span>Cổng Thông Báo & Tích Hợp</span>
+          <CreditCard className="w-5 h-5" />
+          <span>Cổng Thanh Toán</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 border rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-500 text-white font-bold flex items-center justify-center text-xs">
-                Zalo
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Zalo Official Account</div>
-                <div className="text-xs text-green-600 font-medium">Đã kết nối</div>
-              </div>
-            </div>
-            <Button variant="outline" size="sm">Cấu hình</Button>
-          </div>
-
           <div className="p-4 border rounded-xl flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-red-500 text-white font-bold flex items-center justify-center text-xs">
@@ -164,7 +177,7 @@ export default function SettingsPage() {
       <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
         <div className="flex items-center gap-2 text-primary font-bold text-base pb-3 border-b border-gray-100">
           <Database className="w-5 h-5" />
-          <span>Sao Lưu & Khôi Phục Dữ Liệu (R7.6, R7.7)</span>
+          <span>Sao Lưu & Khôi Phục Dữ Liệu</span>
         </div>
 
         <select className="border rounded-lg p-2 w-full" aria-label="Bản sao lưu" value={selectedBackup} onChange={e => setSelectedBackup(e.target.value)}>
@@ -191,37 +204,6 @@ export default function SettingsPage() {
               <Upload className="w-3.5 h-3.5" /> Khôi phục
             </Button>
           </div>
-        </div>
-      </div>
-
-      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 text-primary font-bold text-base pb-3 border-b border-gray-100">
-          <History className="w-5 h-5" />
-          <span>Nhật Ký Thao Tác Hệ Thống (R7.5)</span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 text-gray-500 uppercase border-b border-gray-100">
-              <tr>
-                <th className="py-2.5 px-3">Thời gian</th>
-                <th className="py-2.5 px-3">Người thực hiện</th>
-                <th className="py-2.5 px-3">Hành động</th>
-                <th className="py-2.5 px-3">Tài nguyên</th>
-                <th className="py-2.5 px-3">Chi tiết</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-gray-700">
-              {logs.map(log => <tr key={log.id}>
-                <td className="py-2.5 px-3">{new Date(log.createdAt).toLocaleString('vi-VN')}</td>
-                <td className="py-2.5 px-3">{log.user?.fullName || 'Hệ thống'}</td>
-                <td className="py-2.5 px-3">{log.action}</td>
-                <td className="py-2.5 px-3">{log.resource}</td>
-                <td className="py-2.5 px-3">{log.details}</td>
-              </tr>)}
-              {!logs.length && <tr><td colSpan={5} className="py-4 text-center">Chưa có nhật ký</td></tr>}
-            </tbody>
-          </table>
         </div>
       </div>
 

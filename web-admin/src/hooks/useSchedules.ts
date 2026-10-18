@@ -6,6 +6,7 @@ import type { Schedule, CreateScheduleDto } from '@/types'
 const SCHEDULES_KEY = 'schedules'
 
 interface SchedulesParams {
+  date?: string
   startDate?: string
   endDate?: string
   instructorId?: string
@@ -20,6 +21,9 @@ export function useSchedules(params: SchedulesParams = {}) {
       const response = await api.get<Schedule[]>('/schedules', { params })
       return response.data
     },
+    refetchInterval: 15000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -31,6 +35,9 @@ export function useSchedule(id: string) {
       return response.data
     },
     enabled: !!id,
+    staleTime: 0,
+    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   })
 }
 

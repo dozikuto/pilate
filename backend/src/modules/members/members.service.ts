@@ -27,10 +27,12 @@ import { PaymentMethod } from "../../common/enums/payment-method.enum";
 import { PaymentStatus } from "../../common/enums/payment-status.enum";
 import { PromotionsService } from "../promotions/promotions.service";
 import { Branch } from "../../entities/branch.entity";
+import { MemberPackageSettingsService } from '../packages/member-package-settings.service';
 
 @Injectable()
 export class MembersService {
   constructor(
+    private readonly packageSettings: MemberPackageSettingsService,
     private readonly promotionsService: PromotionsService,
     @InjectRepository(Member)
     private membersRepository: Repository<Member>,
@@ -137,9 +139,11 @@ export class MembersService {
         email: m.user?.email || "",
         dateOfBirth: m.dateOfBirth,
         gender: m.gender,
+        address: m.address,
         emergencyContact: m.emergencyContactName,
         emergencyPhone: m.emergencyContactPhone,
         healthNotes: m.healthNotes,
+        goals: m.goals,
         joinDate: m.createdAt,
         status: memberStatus,
         totalSessions: totalSessions || 10,
@@ -183,13 +187,15 @@ export class MembersService {
         "bookings.schedule.class",
         "bookings.schedule.instructor",
         "checkIns",
+        "checkIns.schedule",
+        "checkIns.schedule.class",
       ],
     });
 
     if (!member) {
       throw new NotFoundException(`Member #${id} not found`);
     }
-    return member;
+    return { ...member, memberPackages: await this.packageSettings.decorate(member.memberPackages) };
   }
 
   async findByUserId(userId: string) {
@@ -228,6 +234,7 @@ export class MembersService {
       userId: savedUser.id,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
       gender: dto.gender,
+      address: dto.address,
       emergencyContactName: dto.emergencyContactName,
       emergencyContactPhone: dto.emergencyContactPhone,
       healthNotes: dto.healthNotes,
@@ -241,27 +248,33 @@ export class MembersService {
 
   async update(id: string, dto: UpdateMemberDto) {
     const member = await this.findOne(id);
-
-    if (dto.fullName || dto.phone) {
-      await this.usersRepository.update(member.userId, {
-        ...(dto.fullName && { fullName: dto.fullName }),
-        ...(dto.phone && { phone: dto.phone }),
+    try {
+      await this.membersRepository.manager.transaction(async (manager) => {
+        const users = manager.getRepository(User);
+        const profile: Partial<Member> = {};
+        const account: Partial<User> = {};
+        if (dto.fullName !== undefined) account.fullName = dto.fullName;
+        if (dto.phone !== undefined) account.phone = dto.phone;
+        if (dto.email !== undefined) {
+          const email = dto.email.trim().toLowerCase();
+          const existing = await users.createQueryBuilder('u')
+            .where('LOWER(u.email) = :email', { email })
+            .andWhere('u.id != :userId', { userId: member.userId }).getOne();
+          if (existing) throw new ConflictException('Email đã được sử dụng bởi tài khoản khác');
+          account.email = email;
+        }
+        if (dto.dateOfBirth !== undefined) profile.dateOfBirth = dto.dateOfBirth === null ? null : new Date(dto.dateOfBirth);
+        for (const key of ['gender', 'address', 'emergencyContactName', 'emergencyContactPhone', 'healthNotes', 'goals'] as const) {
+          if (dto[key] !== undefined) profile[key] = dto[key];
+        }
+        const changed = Object.keys(account).length > 0 || Object.keys(profile).length > 0;
+        if (Object.keys(account).length) await users.update(member.userId, { ...account, updatedAt: new Date() });
+        if (changed) await manager.getRepository(Member).update(id, { ...profile, updatedAt: new Date() });
       });
+    } catch (error) {
+      if (error?.code === '23505') throw new ConflictException('Email đã được sử dụng bởi tài khoản khác');
+      throw error;
     }
-
-    await this.membersRepository.update(id, {
-      ...(dto.dateOfBirth && { dateOfBirth: new Date(dto.dateOfBirth) }),
-      ...(dto.gender && { gender: dto.gender }),
-      ...(dto.emergencyContactName !== undefined && {
-        emergencyContactName: dto.emergencyContactName,
-      }),
-      ...(dto.emergencyContactPhone !== undefined && {
-        emergencyContactPhone: dto.emergencyContactPhone,
-      }),
-      ...(dto.healthNotes !== undefined && { healthNotes: dto.healthNotes }),
-      ...(dto.goals !== undefined && { goals: dto.goals }),
-    });
-
     return this.findOne(id);
   }
 
@@ -290,7 +303,7 @@ export class MembersService {
       order: { createdAt: "DESC" },
     });
 
-    return memberPackages.map((mp) => {
+    return (await this.packageSettings.decorate(memberPackages)).map((mp) => {
       const totalSessions = mp.package?.totalSessions ?? 10;
       const remainingSessions = mp.remainingSessions ?? 0;
       const expiryIso = mp.expiryDate
@@ -305,15 +318,28 @@ export class MembersService {
         package: {
           id: mp.package?.id ?? mp.packageId,
           name: mp.package?.name ?? "Gói tập Pilates",
+          catalogCode: mp.package?.catalogCode,
           description: mp.package?.description ?? "Gói tập Pilates tiêu chuẩn",
           totalSessions,
           validDays: mp.package?.durationDays ?? 30,
           price: Number(mp.package?.price) || 0,
           category: mp.package?.type ?? "session_based",
+          privateSessionEnabled: mp.package?.privateSessionEnabled ?? false,
+          privateSessionType: mp.package?.privateSessionType,
+          privateSessionDurationMinutes: mp.package?.privateSessionDurationMinutes,
         },
         totalSessions,
         remainingSessions,
         usedSessions: Math.max(0, totalSessions - remainingSessions),
+        attendedSessions: mp.attendedSessions,
+        reservedSessions: mp.reservedSessions,
+        forfeitedSessions: mp.forfeitedSessions,
+        otherUsedSessions: mp.otherUsedSessions,
+        cancelHoursLimit: mp.cancelHoursLimit,
+        preferredInstructorId: mp.preferredInstructorId,
+        preferredInstructor: mp.preferredInstructor,
+        duoPartnerPackageId: mp.duoPartnerPackageId,
+        duoPartner: mp.duoPartner,
         startDate: mp.startDate
           ? new Date(mp.startDate).toISOString()
           : new Date().toISOString(),
@@ -427,19 +453,18 @@ export class MembersService {
       }
     }
 
-    const nextBooking = await this.bookingsRepository.findOne({
-      where: {
-        memberId: member.id,
-        status: BookingStatus.CONFIRMED,
-      },
-      relations: [
-        "schedule",
-        "schedule.class",
-        "schedule.instructor",
-        "schedule.room",
-      ],
-      order: { bookedAt: "DESC" },
-    });
+    const nextBooking = await this.bookingsRepository
+      .createQueryBuilder("booking")
+      .innerJoinAndSelect("booking.schedule", "schedule")
+      .leftJoinAndSelect("schedule.class", "class")
+      .leftJoinAndSelect("schedule.instructor", "instructor")
+      .leftJoinAndSelect("schedule.room", "room")
+      .where("booking.memberId = :memberId", { memberId: member.id })
+      .andWhere("booking.status = :status", { status: BookingStatus.CONFIRMED })
+      .andWhere("schedule.status != :cancelled", { cancelled: "cancelled" })
+      .andWhere("schedule.startTime >= :now", { now: new Date() })
+      .orderBy("schedule.startTime", "ASC")
+      .getOne();
 
     return {
       remainingSessions,
@@ -481,30 +506,10 @@ export class MembersService {
 
   async updateProfileByUserId(userId: string, data: any) {
     const member = await this.findByUserId(userId);
-    if (data.fullName || data.phone) {
-      await this.usersRepository.update(userId, {
-        ...(data.fullName && { fullName: data.fullName }),
-        ...(data.phone && { phone: data.phone }),
-      });
-    }
-
-    const updateMemberData: any = {};
-    if (data.healthNotes || data.healthNote) {
-      updateMemberData.healthNotes = data.healthNotes || data.healthNote;
-    }
-    if (data.dateOfBirth)
-      updateMemberData.dateOfBirth = new Date(data.dateOfBirth);
-    if (data.gender) updateMemberData.gender = data.gender;
-    if (data.emergencyContactName)
-      updateMemberData.emergencyContactName = data.emergencyContactName;
-    if (data.emergencyContactPhone)
-      updateMemberData.emergencyContactPhone = data.emergencyContactPhone;
-
-    if (Object.keys(updateMemberData).length > 0) {
-      await this.membersRepository.update(member.id, updateMemberData);
-    }
-
-    const updated = await this.findByUserId(userId);
+    const updated = await this.update(member.id, {
+      ...data,
+      healthNotes: data.healthNotes !== undefined ? data.healthNotes : data.healthNote,
+    });
     return {
       id: updated.id,
       userId: updated.userId,
@@ -515,6 +520,10 @@ export class MembersService {
       healthNotes: updated.healthNotes,
       dateOfBirth: updated.dateOfBirth,
       gender: updated.gender,
+      address: updated.address,
+      goals: updated.goals,
+      emergencyContactName: updated.emergencyContactName,
+      emergencyContactPhone: updated.emergencyContactPhone,
       qrCode: updated.qrCode,
     };
   }

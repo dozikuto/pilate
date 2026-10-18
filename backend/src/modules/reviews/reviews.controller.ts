@@ -1,9 +1,9 @@
 import {
-  Controller, Get, Post, Body, Query, UseGuards,
+  Controller, Get, Post, Patch, Param, Body, Query, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
-import { CreateReviewDto } from './dto/create-review.dto';
+import { CreateReviewDto, ReplyReviewDto } from './dto/create-review.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,6 +23,15 @@ export class ReviewsController {
     @Body() dto: CreateReviewDto,
   ) {
     return this.reviewsService.create(userId, dto);
+  }
+
+  @Patch(':id/reply')
+  @ApiOperation({ summary: 'Reply to a student review' })
+  reply(
+    @Param('id') id: string,
+    @Body() dto: ReplyReviewDto,
+  ) {
+    return this.reviewsService.replyToReview(id, dto.reply);
   }
 
   @Get()

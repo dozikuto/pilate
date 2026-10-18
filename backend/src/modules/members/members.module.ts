@@ -10,6 +10,7 @@ import { Transaction } from "../../entities/transaction.entity";
 import { MembersService } from "./members.service";
 import { MembersController } from "./members.controller";
 import { PromotionsModule } from "../promotions/promotions.module";
+import { PackagesModule } from '../packages/packages.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PromotionsModule } from "../promotions/promotions.module";
       Transaction,
     ]),
     PromotionsModule,
+    PackagesModule,
   ],
   controllers: [MembersController],
   providers: [MembersService],

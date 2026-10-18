@@ -40,6 +40,7 @@ export class TransactionsService {
       .createQueryBuilder("tx")
       .leftJoinAndSelect("tx.member", "member")
       .leftJoinAndSelect("member.user", "user")
+      .leftJoinAndSelect("tx.package", "package")
       .leftJoinAndSelect("tx.processor", "processor")
       .leftJoinAndSelect("tx.branch", "branch");
 
@@ -76,7 +77,7 @@ export class TransactionsService {
   async findOne(id: string, currentUser?: any) {
     const tx = await this.transactionsRepository.findOne({
       where: { id },
-      relations: ["member", "member.user", "processor", "branch"],
+      relations: ["member", "member.user", "package", "processor", "branch"],
     });
     if (!tx) throw new NotFoundException(`Transaction #${id} not found`);
     if (
@@ -147,7 +148,11 @@ export class TransactionsService {
     return this.findOne(id);
   }
 
-  async confirmPayment(id: string, referenceCode?: string) {
+  async confirmPayment(
+    id: string,
+    referenceCode?: string,
+    processedBy?: string,
+  ) {
     await this.transactionsRepository.manager.transaction(async (manager) => {
       const tx = await manager
         .getRepository(Transaction)
@@ -164,8 +169,8 @@ export class TransactionsService {
       ) {
         const pkg = await manager
           .getRepository(Package)
-          .findOneBy({ id: tx.packageId, isActive: true });
-        if (!pkg) throw new BadRequestException("Gói không còn hoạt động");
+          .findOneBy({ id: tx.packageId });
+        if (!pkg) throw new BadRequestException("Gói tập không tồn tại");
         const startDate = new Date(),
           expiryDate = pkg.durationDays
             ? new Date(Date.now() + pkg.durationDays * 86400000)
@@ -184,6 +189,7 @@ export class TransactionsService {
       }
       tx.paymentStatus = PaymentStatus.COMPLETED;
       if (referenceCode) tx.referenceCode = referenceCode;
+      if (processedBy) tx.processedBy = processedBy;
       await manager.getRepository(Transaction).save(tx);
     });
     return this.findOne(id);

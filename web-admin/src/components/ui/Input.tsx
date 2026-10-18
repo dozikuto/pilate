@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { normalizeNumberInput } from '@/lib/numberInput'
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -67,6 +68,24 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 )
 Input.displayName = 'Input'
 
+interface NumberInputProps extends Omit<InputProps, 'type' | 'value' | 'defaultValue' | 'onChange'> {
+  value: string
+  onValueChange: (value: string) => void
+}
+
+const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
+  ({ value, onValueChange, ...props }, ref) => (
+    <Input
+      {...props}
+      ref={ref}
+      type="number"
+      value={value}
+      onChange={(event) => onValueChange(normalizeNumberInput(event.target.value))}
+    />
+  )
+)
+NumberInput.displayName = 'NumberInput'
+
 export interface TextareaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
@@ -109,4 +128,4 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
 )
 Textarea.displayName = 'Textarea'
 
-export { Input, Textarea }
+export { Input, NumberInput, Textarea }

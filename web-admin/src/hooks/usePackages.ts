@@ -5,11 +5,20 @@ import type { Package, CreatePackageDto } from '@/types'
 
 const PACKAGES_KEY = 'packages'
 
+export function usePreparePackageCatalog() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post('/packages/starter-catalog'),
+    onSuccess: () => { client.invalidateQueries({ queryKey: [PACKAGES_KEY] }); toast.success('Đã chuẩn bị 5 gói mẫu. Nhập giá trước khi mở bán.') },
+    onError: () => toast.error('Không chuẩn bị được danh mục gói tập'),
+  })
+}
+
 export function usePackages(params?: { status?: string }) {
   return useQuery({
     queryKey: [PACKAGES_KEY, params],
     queryFn: async () => {
-      const response = await api.get<Package[]>('/packages', { params })
+      const response = await api.get<Package[]>('/packages', { params: { limit: 100, ...params } })
       return response.data
     },
   })
@@ -50,7 +59,7 @@ export function useUpdatePackage(id: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (data: Partial<CreatePackageDto>) => {
-      const response = await api.put<Package>(`/packages/${id}`, data)
+      const response = await api.patch<Package>(`/packages/${id}`, data)
       return response.data
     },
     onSuccess: () => {

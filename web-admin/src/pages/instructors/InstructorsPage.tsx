@@ -3,7 +3,8 @@ import { Plus, Star, Award, Phone, Mail, Edit, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
-import { Input } from '@/components/ui/Input'
+import { Input, NumberInput } from '@/components/ui/Input'
+import { parseNumberInput } from '@/lib/numberInput'
 import { formatCurrency } from '@/lib/utils'
 import api from '@/lib/axios'
 import toast from 'react-hot-toast'
@@ -70,7 +71,7 @@ export default function InstructorsPage() {
     name: '',
     email: '',
     phone: '',
-    hourlyRate: 400000,
+    hourlyRate: '400000',
     specializations: 'Reformer, Mat, Cadillac',
     bio: '',
   })
@@ -94,7 +95,7 @@ export default function InstructorsPage() {
           bio: ins.bio || 'Huấn luyện viên Pilates chuyên nghiệp tại PilatesMS.',
           rating: 4.9,
           totalClasses: 120,
-          hourlyRate: Number(ins.hourlyRate) || 400000,
+          hourlyRate: Number(ins.hourlyRate ?? 400000),
           status: ins.user?.isActive === false ? 'inactive' : 'active',
         }))
         setInstructors(mapped)
@@ -116,7 +117,7 @@ export default function InstructorsPage() {
       name: '',
       email: '',
       phone: '',
-      hourlyRate: 400000,
+      hourlyRate: '400000',
       specializations: 'Reformer, Mat, Cadillac',
       bio: '',
     })
@@ -129,7 +130,7 @@ export default function InstructorsPage() {
       name: ins.name,
       email: ins.email,
       phone: ins.phone,
-      hourlyRate: ins.hourlyRate,
+      hourlyRate: String(ins.hourlyRate),
       specializations: ins.specializations.join(', '),
       bio: ins.bio,
     })
@@ -137,6 +138,11 @@ export default function InstructorsPage() {
   }
 
   const handleSave = async () => {
+    const hourlyRate = parseNumberInput(formData.hourlyRate)
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
+      toast.error('Vui lòng nhập thù lao từ 0 đồng')
+      return
+    }
     if (!formData.name.trim()) {
       toast.error('Vui lòng nhập họ và tên HLV')
       return
@@ -153,7 +159,7 @@ export default function InstructorsPage() {
           await api.patch(`/instructors/${editingInstructor.id}`, {
             fullName: formData.name,
             phone: formData.phone,
-            hourlyRate: Number(formData.hourlyRate),
+            hourlyRate,
             specializations: specs,
             bio: formData.bio,
           })
@@ -166,7 +172,7 @@ export default function InstructorsPage() {
                   name: formData.name,
                   email: formData.email,
                   phone: formData.phone,
-                  hourlyRate: Number(formData.hourlyRate),
+                  hourlyRate,
                   specializations: specs,
                   bio: formData.bio,
                 }
@@ -180,7 +186,7 @@ export default function InstructorsPage() {
           fullName: formData.name,
           email: formData.email || `coach.${Date.now()}@pilatesms.vn`,
           phone: formData.phone || undefined,
-          hourlyRate: Number(formData.hourlyRate),
+          hourlyRate,
           specializations: specs,
           bio: formData.bio,
         })
@@ -195,7 +201,7 @@ export default function InstructorsPage() {
           bio: formData.bio || 'Huấn luyện viên Pilates chuyên nghiệp',
           rating: 5.0,
           totalClasses: 0,
-          hourlyRate: Number(formData.hourlyRate),
+          hourlyRate,
           status: 'active',
         }
         setInstructors((prev) => [newIns, ...prev])
@@ -345,10 +351,11 @@ export default function InstructorsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Thù lao theo giờ (VNĐ)</label>
-                <Input
-                  type="number"
+                <NumberInput
+                  aria-label="Thù lao theo giờ (VNĐ)"
+                  min={0}
                   value={formData.hourlyRate}
-                  onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })}
+                  onValueChange={(hourlyRate) => setFormData({ ...formData, hourlyRate })}
                 />
               </div>
               <div>

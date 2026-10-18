@@ -1,6 +1,16 @@
 # Kiểm thử use case Pilates
 
-Chạy API NestJS thật với PostgreSQL thật, dùng fixture riêng và đối chiếu dữ liệu sau từng thao tác. Bao gồm 132 ca kiểm thử cho UC1–UC7 và chạy lại 54 ca trong hai script hiện có.
+Luồng gói tập/HLV/tập đôi: runner HTTP tự chạy thêm `package-flow.cjs` với 11 ca kiểm thử về số buổi đã tập/đã đặt, check-in không trừ hai lần, hủy sớm/muộn, HLV ưu tiên và quyền sở hữu, ghép đôi đối ứng, buổi cuối và chống ghép chéo khi có request đồng thời. `--serve --package-flow` tạo fixture riêng để kiểm tra giao diện cả admin và học viên. Quy trình sử dụng ở `docs/Luong_goi_tap_va_dat_lich.md`.
+
+Lịch tuần: `node tests/qa/run-weekly-booking.cjs` chạy 12 ca cho bộ chọn của học viên (Thứ 3/Thứ 7, múi giờ, lọc giờ/lớp/HLV, giữ lựa chọn thủ công, giới hạn gói, buổi đầy/trùng/hết hạn, thiếu lịch và gói theo thời gian). Runner HTTP bên dưới có 7 ca bổ sung cho admin xem trước/tạo lịch lặp, kiểm tra ngày xung đột, rollback, validation, phân quyền và tạo đồng thời.
+
+Luồng chọn nhiều buổi theo gói có 11 ca kiểm thử HTTP/PostgreSQL: gói 5 buổi đặt 5 lịch và hoàn khi hủy; vượt số buổi; validation; quyền sở hữu; lớp đầy rollback; trùng giờ; hạn gói/trạng thái; hình thức và thời lượng tập; request đồng thời; gửi lại danh sách; gói theo thời gian. Các ca này chạy trong runner dưới đây, không dùng dữ liệu hiện có.
+
+`--serve --package-booking` tạo fixture giao diện với gói 5 buổi và lịch trong hai tuần tới. Có thể đặt `QA_HTTP_PORT` để giữ cố định cổng API; `QA_REPORT_DIR` chứa `ui-server.json` và tệp `stop-ui` để dừng. Giao diện kiểm thử cần trỏ biến API tới URL trong tệp này. Chỉ sử dụng tùy chọn này cho kiểm thử riêng.
+
+Chạy API NestJS thật với PostgreSQL thật, dùng fixture riêng và đối chiếu dữ liệu sau từng thao tác. Kiểm tra các chức năng còn trong phạm vi dự án và chạy lại hai script hiện có. Có kiểm thử xác nhận API của UC22, UC23, UC26, UC31, UC34 đã bị gỡ; danh mục phòng chỉ đọc và phản hồi HLV vẫn được lưu trong hồ sơ tiến độ.
+
+Bao gồm tạo/sửa hình thức tập lớp hoặc tập riêng 1:1–1:4, validation thời lượng, phân quyền cấu hình gói, dữ liệu trên gói hội viên và lịch HLV. Kiểm tra các API đề nghị đã gỡ trả 404 và dữ liệu đề nghị cũ không còn chặn lịch hoặc đặt lớp.
 
 ## Chạy lại
 
@@ -25,4 +35,4 @@ Một test thất bại có thể bao gồm nhiều endpoint cùng nguyên nhân
 
 `run-integration.cjs --serve` mở API test với fixture cho kiểm tra giao diện, ghi `ui-server.json` vào `QA_REPORT_DIR`. Chạy `web-qa.mjs` với cùng `QA_REPORT_DIR` để mở web ở 127.0.0.1:5173. Tạo tệp `stop-ui` trong thư mục report để dừng API và xóa database test. Dừng Vite bằng Ctrl+C. Không dùng kết quả build/API để khẳng định giao diện hoặc thiết bị mobile đã được kiểm thử tương tác.
 
-Hai script cũ trực tiếp dùng port 3001 và có sửa dữ liệu/phát broadcast. Nên chạy qua runner này, không chạy trực tiếp trên database có người dùng thật.
+Hai script cũ trực tiếp dùng port 3001 và có sửa dữ liệu. Nên chạy qua runner này, không chạy trực tiếp trên database có người dùng thật.

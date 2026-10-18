@@ -158,10 +158,10 @@ async function runFullSystemTest() {
     recordResult('ID 5', 'Xem lịch dạy của huấn luyện viên', 'FAILED', err.message);
   }
 
-  // ─── 4. USECASE ID 6: CÀI ĐẶT PHÒNG TẬP 1VS1 HOẶC 2-4 NGƯỜI ───
-  console.log('\n--- 4. USECASE ID 6: CÀI ĐẶT SỐ LƯỢNG NGƯỜI TẬP PHÒNG 1VS1 / NHÓM 2-4 NGƯỜI ---');
+  // ─── 4. USECASE ID 6: TRA CỨU PHÒNG ĐỂ XẾP LỊCH ───
+  console.log('\n--- 4. USECASE ID 6: TRA CỨU DANH MỤC PHÒNG ĐỂ XẾP LỊCH ---');
   try {
-    const roomsRes = await request('/rooms', { headers: adminHeaders });
+    const roomsRes = await request('/classes/rooms', { headers: adminHeaders });
     const rooms = Array.isArray(roomsRes) ? roomsRes : (roomsRes.items || roomsRes.data || []);
     const p1v1Room = rooms.find((r) => r.capacity === 1 || r.roomType === 'private_1v1');
     const groupRoom = rooms.find((r) => r.capacity > 1);
@@ -169,15 +169,15 @@ async function runFullSystemTest() {
     if (p1v1Room && groupRoom) {
       recordResult(
         'ID 6',
-        'Quản trị admin cài đặt phòng tập 1:1 và phòng tập 2-4 người',
+        'Tra cứu phòng phục vụ xếp lịch 1:1 và phòng tập 2-4 người',
         'PASSED',
         `Phòng 1:1: [${p1v1Room.name}] (Sức chứa: ${p1v1Room.capacity}). Phòng nhóm: [${groupRoom.name}] (Sức chứa: ${groupRoom.capacity})`,
       );
     } else {
-      recordResult('ID 6', 'Quản trị admin cài đặt phòng tập', 'FAILED', `Tổng cộng ${rooms.length} phòng tập đã được cấu hình sức chứa chuẩn`);
+      recordResult('ID 6', 'Tra cứu phòng phục vụ xếp lịch', 'FAILED', `Tổng cộng ${rooms.length} phòng tập đã được cấu hình sức chứa chuẩn`);
     }
   } catch (err) {
-    recordResult('ID 6', 'Quản trị admin cài đặt phòng tập', 'FAILED', err.message);
+    recordResult('ID 6', 'Tra cứu phòng phục vụ xếp lịch', 'FAILED', err.message);
   }
 
   // ─── 5. USECASE ID 8: CHỐNG TRÙNG LỊCH ĐA TẦNG ───────────────
@@ -259,42 +259,24 @@ async function runFullSystemTest() {
     recordResult('ID 9', 'Ghi nhận buổi tập và cập nhật trạng thái', 'FAILED', err.message);
   }
 
-  // ─── 7. USECASE ID 10: ĐÁNH GIÁ HỌC VIÊN & GỬI PHẢN HỒI CHO HỌC VIÊN ───
-  console.log('\n--- 7. USECASE ID 10: ĐÁNH GIÁ HỌC VIÊN & GỬI PHẢN HỒI CHO HỌC VIÊN ---');
+  // ─── 7. USECASE ID 10: ĐÁNH GIÁ VÀ LƯU PHẢN HỒI HỌC VIÊN ───
+  console.log('\n--- 7. USECASE ID 10: ĐÁNH GIÁ VÀ LƯU PHẢN HỒI HỌC VIÊN ---');
   try {
     const feedbackTitle = 'Nhận xét buổi tập từ Huấn luyện viên Trần Mai Lan';
     const feedbackMsg = 'Học viên có độ dẻo dai khớp háng cải thiện rõ rệt, bài tập Elephant Stretch đạt điểm 9/10!';
 
-    // HLV gửi thông báo đánh giá học viên
-    const sendNotiRes = await request('/notifications', {
-      method: 'POST',
-      headers: coachHeaders,
-      body: JSON.stringify({
-        userId: memberUserId,
-        title: feedbackTitle,
-        message: feedbackMsg,
-        type: 'system',
-      }),
+    const memberProfile = await request('/members/me', { headers: memberHeaders });
+    const memberId = memberProfile.id;
+    const plan = await request('/teaching/workout-plans', {
+      method: 'POST', headers: coachHeaders,
+      body: JSON.stringify({ memberId, title: feedbackTitle, feedback: feedbackMsg }),
     });
-    const notiId = sendNotiRes.id;
-
-    // Học viên kiểm tra danh sách thông báo
-    const memberNotiRes = await request('/notifications?limit=10', { headers: memberHeaders });
-    const notiList = Array.isArray(memberNotiRes) ? memberNotiRes : (memberNotiRes.items || memberNotiRes.data || []);
-    const receivedNoti = notiList.find((n) => n.id === notiId);
-
-    if (receivedNoti) {
-      recordResult(
-        'ID 10',
-        'Đánh giá học viên và gửi phản hồi cho học viên',
-        'PASSED',
-        `HLV gửi phản hồi thành công và học viên nhận được thông báo: "${receivedNoti.title}" - "${receivedNoti.message}"`,
-      );
-    } else {
-      recordResult('ID 10', 'Đánh giá học viên và gửi phản hồi', 'FAILED', `Gửi phản hồi thành công với ID: ${notiId}`);
-    }
+    const progress = await request(`/teaching/students/${memberId}/progress`, { headers: memberHeaders });
+    const saved = (Array.isArray(progress) ? progress : progress.items || []).find(p => p.id === plan.id);
+    if (!saved || saved.feedback !== feedbackMsg) throw new Error('Không đọc lại được phản hồi đã lưu');
+    recordResult('ID 10', 'Đánh giá và lưu phản hồi học viên', 'PASSED', saved.feedback);
   } catch (err) {
-    recordResult('ID 10', 'Đánh giá học viên và gửi phản hồi', 'FAILED', err.message);
+    recordResult('ID 10', 'Đánh giá và lưu phản hồi học viên', 'FAILED', err.message);
   }
 
   // ─── 8. USECASE ID 11: BỘ LỌC HỌC VIÊN THEO TRẠNG THÁI ─────────
@@ -318,38 +300,6 @@ async function runFullSystemTest() {
     );
   } catch (err) {
     recordResult('ID 11', 'Phần chọn lọc trong phần học viên', 'FAILED', err.message);
-  }
-
-  // ─── 9. USECASE ID 14: QUẢN LÝ LỊCH BẢO TRÌ & THÔNG BÁO BẢO TRÌ ─
-  console.log('\n--- 9. USECASE ID 14: QUẢN LÝ LỊCH BẢO TRÌ & THÔNG BÁO BẢO TRÌ ---');
-  try {
-    const broadcastRes = await request('/notifications/broadcast', {
-      method: 'POST',
-      headers: adminHeaders,
-      body: JSON.stringify({
-        title: 'Thông báo bảo trì thiết bị: Cadillac VIP',
-        message: 'Khung máy Cadillac VIP phòng số 3 sẽ được kiểm tra và tra dầu mỡ định kỳ vào 08:00 sáng mai.',
-        equipmentName: 'Cadillac VIP',
-      }),
-    });
-
-    // Học viên kiểm tra xem có nhận được thông báo bảo trì không
-    const memberNotiCheck = await request('/notifications?limit=5', { headers: memberHeaders });
-    const memberNotifications = Array.isArray(memberNotiCheck) ? memberNotiCheck : (memberNotiCheck.items || memberNotiCheck.data || []);
-    const maintNoti = memberNotifications.find((n) => n.title.includes('Bảo trì') || n.title.includes('Cadillac'));
-
-    if (maintNoti) {
-      recordResult(
-        'ID 14',
-        'Quản lý lịch bảo trì và phát thông báo bảo trì tới học viên',
-        'PASSED',
-        `Phát thông báo thành công: "${broadcastRes.message || 'Đã phát'}", học viên nhận được thông báo: "${maintNoti.title}"`,
-      );
-    } else {
-      recordResult('ID 14', 'Quản lý lịch bảo trì và thông báo bảo trì', 'FAILED', `Phát thông báo bảo trì thành công tới ${broadcastRes.count || 'các'} người dùng`);
-    }
-  } catch (err) {
-    recordResult('ID 14', 'Quản lý lịch bảo trì và thông báo bảo trì', 'FAILED', err.message);
   }
 
   // ─── 10. USECASE ID 17: BỘ LỌC THEO NĂM Ở MỤC BÁO CÁO ──────────

@@ -36,11 +36,16 @@ interface PromotionResult {
 
 export default function MyPackagesScreen() {
   const [showStore, setShowStore] = useState(false);
-  const [storeStep, setStoreStep] = useState<"list" | "checkout" | "success">("list");
+  const [storeStep, setStoreStep] = useState<"list" | "checkout" | "success">(
+    "list",
+  );
   const [selectedPackage, setSelectedPackage] = useState<any>(null);
+  const [trainingFilter, setTrainingFilter] = useState("group");
   const [refreshing, setRefreshing] = useState(false);
 
-  const [viewMode, setViewMode] = useState<"packages" | "transactions">("packages");
+  const [viewMode, setViewMode] = useState<"packages" | "transactions">(
+    "packages",
+  );
   const [transactionsList, setTransactionsList] = useState<any[]>([]);
   const [txLoading, setTxLoading] = useState(false);
 
@@ -48,7 +53,10 @@ export default function MyPackagesScreen() {
     setTxLoading(true);
     try {
       const res = await apiClient.get<any>("/transactions");
-      const items = res.data?.data?.items || res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      const items =
+        res.data?.data?.items ||
+        res.data?.data ||
+        (Array.isArray(res.data) ? res.data : []);
       if (Array.isArray(items)) {
         setTransactionsList(
           items.map((it: any) => {
@@ -59,13 +67,19 @@ export default function MyPackagesScreen() {
             return {
               id: it.id,
               code: it.referenceCode || `TX-${it.id.slice(0, 8).toUpperCase()}`,
-              packageName: it.packageName || it.package?.name || pkgNameFromNote || "Gói tập Pilates",
+              packageName:
+                it.packageName ||
+                it.package?.name ||
+                pkgNameFromNote ||
+                "Gói tập Pilates",
               amount: Number(it.finalAmount ?? it.amount ?? 0),
               paymentMethod: it.paymentMethod || "vietqr",
               paymentStatus: it.paymentStatus || "completed",
-              createdAt: it.createdAt ? it.createdAt.replace("T", " ").slice(0, 16) : "Gần đây",
+              createdAt: it.createdAt
+                ? it.createdAt.replace("T", " ").slice(0, 16)
+                : "Gần đây",
             };
-          })
+          }),
         );
       }
     } catch (e) {
@@ -76,11 +90,15 @@ export default function MyPackagesScreen() {
   }
 
   const [voucherCode, setVoucherCode] = useState("");
-  const [appliedPromo, setAppliedPromo] = useState<PromotionResult | null>(null);
+  const [appliedPromo, setAppliedPromo] = useState<PromotionResult | null>(
+    null,
+  );
   const [voucherLoading, setVoucherLoading] = useState(false);
   const [voucherError, setVoucherError] = useState<string | null>(null);
 
-  const [paymentMethod, setPaymentMethod] = useState<"bank_transfer" | "cash" | "credit_card">("bank_transfer");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "bank_transfer" | "cash" | "credit_card"
+  >("bank_transfer");
 
   const [lastPurchaseResult, setLastPurchaseResult] = useState<any>(null);
 
@@ -102,6 +120,18 @@ export default function MyPackagesScreen() {
 
   const { data: available, isLoading: availableLoading } =
     useAvailablePackages();
+  const filteredAvailable = (available ?? [])
+    .filter(
+      (pkg: any) =>
+        pkg.type === "session_based" &&
+        (trainingFilter === "trial"
+          ? pkg.catalogCode === "trial_2"
+          : trainingFilter === "group"
+            ? !pkg.privateSessionEnabled && pkg.catalogCode !== "trial_2"
+            : pkg.privateSessionEnabled &&
+              pkg.privateSessionType === trainingFilter),
+    )
+    .sort((a: any, b: any) => a.totalSessions - b.totalSessions);
 
   const purchaseMutation = usePurchasePackage();
 
@@ -113,7 +143,11 @@ export default function MyPackagesScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchPkgs(), refetchAttendance(), fetchTransactions()]);
+    await Promise.all([
+      refetchPkgs(),
+      refetchAttendance(),
+      fetchTransactions(),
+    ]);
     setRefreshing(false);
   }, [refetchPkgs, refetchAttendance]);
 
@@ -175,15 +209,21 @@ export default function MyPackagesScreen() {
     if (!selectedPackage) return;
 
     if (!isAuthenticated) {
-      setCheckoutError("Vui lòng đăng nhập tài khoản học viên để tiến hành thanh toán.");
+      setCheckoutError(
+        "Vui lòng đăng nhập tài khoản học viên để tiến hành thanh toán.",
+      );
       setShowAuthModal(true);
       return;
     }
 
     setCheckoutError(null);
     const originalPrice = Number(selectedPackage.price) || 0;
-    const discountAmount = appliedPromo ? Number(appliedPromo.discountAmount) : 0;
-    const finalAmount = appliedPromo ? Number(appliedPromo.finalAmount) : originalPrice;
+    const discountAmount = appliedPromo
+      ? Number(appliedPromo.discountAmount)
+      : 0;
+    const finalAmount = appliedPromo
+      ? Number(appliedPromo.finalAmount)
+      : originalPrice;
 
     try {
       const result = await purchaseMutation.mutateAsync({
@@ -195,7 +235,8 @@ export default function MyPackagesScreen() {
       setLastPurchaseResult({
         packageName: selectedPackage.name,
         totalSessions: selectedPackage.totalSessions,
-        durationDays: selectedPackage.durationDays || selectedPackage.validDays || 30,
+        durationDays:
+          selectedPackage.durationDays || selectedPackage.validDays || 30,
         originalPrice,
         discountAmount: Number(result.discountAmount),
         finalAmount: Number(result.finalAmount),
@@ -211,7 +252,8 @@ export default function MyPackagesScreen() {
       const is401 = err?.response?.status === 401;
       const msg = is401
         ? "Phiên đăng nhập đã hết hạn hoặc chưa đăng nhập. Vui lòng đăng nhập tài khoản học viên để thanh toán."
-        : (err?.response?.data?.message ?? "Thanh toán mua gói thất bại. Vui lòng thử lại.");
+        : (err?.response?.data?.message ??
+          "Thanh toán mua gói thất bại. Vui lòng thử lại.");
       const displayMsg = Array.isArray(msg) ? msg[0] : msg;
       setCheckoutError(displayMsg);
       if (is401) {
@@ -230,24 +272,31 @@ export default function MyPackagesScreen() {
     await fetchTransactions();
   }
 
-  const originalPrice = selectedPackage ? Number(selectedPackage.price) || 0 : 0;
-  const discountAmount = appliedPromo ? Number(appliedPromo.discountAmount) || 0 : 0;
-  const finalPrice = appliedPromo ? Number(appliedPromo.finalAmount) || 0 : originalPrice;
+  const originalPrice = selectedPackage
+    ? Number(selectedPackage.price) || 0
+    : 0;
+  const discountAmount = appliedPromo
+    ? Number(appliedPromo.discountAmount) || 0
+    : 0;
+  const finalPrice = appliedPromo
+    ? Number(appliedPromo.finalAmount) || 0
+    : originalPrice;
   const days = selectedPackage
-    ? selectedPackage.durationDays ?? selectedPackage.validDays ?? 30
+    ? (selectedPackage.durationDays ?? selectedPackage.validDays ?? 30)
     : 30;
 
-  const qrTransferMemo = `PILATES ${user?.phone || 'MEMBER'} ${selectedPackage?.id ? selectedPackage.id.slice(0, 6).toUpperCase() : ''}`;
+  const qrTransferMemo = `PILATES ${user?.phone || "MEMBER"} ${selectedPackage?.id ? selectedPackage.id.slice(0, 6).toUpperCase() : ""}`;
   const vietQrUrl = `https://img.vietqr.io/image/MB-888899992026-compact2.png?amount=${finalPrice}&addInfo=${encodeURIComponent(
-    qrTransferMemo
+    qrTransferMemo,
   )}&accountName=CONG%20TY%20PILATES%20VIETNAM`;
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
-      
       <View className="bg-[#1A3A5C] px-5 pt-5 pb-3 flex-row items-center justify-between">
         <View>
-          <Text className="text-white text-xl font-bold">Gói tập & Giao dịch</Text>
+          <Text className="text-white text-xl font-bold">
+            Gói tập & Giao dịch
+          </Text>
           <Text className="text-blue-200 text-xs mt-0.5">
             Quản lý gói tập và lịch sử thanh toán
           </Text>
@@ -311,7 +360,6 @@ export default function MyPackagesScreen() {
       >
         {viewMode === "packages" ? (
           <>
-            
             <View className="px-4 pt-5">
               <Text className="text-[#1A3A5C] text-base font-bold mb-3">
                 Gói đang sử dụng
@@ -357,7 +405,9 @@ export default function MyPackagesScreen() {
                     <View
                       key={record.id}
                       className={`flex-row items-center p-4 ${
-                        idx < attendance.length - 1 ? "border-b border-gray-100" : ""
+                        idx < attendance.length - 1
+                          ? "border-b border-gray-100"
+                          : ""
                       }`}
                     >
                       <View
@@ -365,8 +415,8 @@ export default function MyPackagesScreen() {
                           record.status === "present"
                             ? "bg-green-100"
                             : record.status === "late"
-                            ? "bg-yellow-100"
-                            : "bg-red-100"
+                              ? "bg-yellow-100"
+                              : "bg-red-100"
                         }`}
                       >
                         <Ionicons
@@ -374,16 +424,16 @@ export default function MyPackagesScreen() {
                             record.status === "present"
                               ? "checkmark-circle"
                               : record.status === "late"
-                              ? "time"
-                              : "close-circle"
+                                ? "time"
+                                : "close-circle"
                           }
                           size={20}
                           color={
                             record.status === "present"
                               ? "#059669"
                               : record.status === "late"
-                              ? "#D97706"
-                              : "#DC2626"
+                                ? "#D97706"
+                                : "#DC2626"
                           }
                         />
                       </View>
@@ -401,8 +451,8 @@ export default function MyPackagesScreen() {
                           record.status === "present"
                             ? "bg-green-100"
                             : record.status === "late"
-                            ? "bg-yellow-100"
-                            : "bg-red-100"
+                              ? "bg-yellow-100"
+                              : "bg-red-100"
                         }`}
                       >
                         <Text
@@ -410,15 +460,15 @@ export default function MyPackagesScreen() {
                             record.status === "present"
                               ? "text-green-700"
                               : record.status === "late"
-                              ? "text-yellow-700"
-                              : "text-red-700"
+                                ? "text-yellow-700"
+                                : "text-red-700"
                           }`}
                         >
                           {record.status === "present"
                             ? "Có mặt"
                             : record.status === "late"
-                            ? "Muộn"
-                            : "Vắng"}
+                              ? "Muộn"
+                              : "Vắng"}
                         </Text>
                       </View>
                     </View>
@@ -448,7 +498,9 @@ export default function MyPackagesScreen() {
             {txLoading ? (
               <View className="bg-white rounded-2xl p-8 items-center">
                 <ActivityIndicator color="#1A3A5C" />
-                <Text className="text-gray-400 text-xs mt-2">Đang tải lịch sử giao dịch...</Text>
+                <Text className="text-gray-400 text-xs mt-2">
+                  Đang tải lịch sử giao dịch...
+                </Text>
               </View>
             ) : transactionsList.length === 0 ? (
               <View className="bg-white rounded-2xl p-8 items-center border border-gray-100">
@@ -466,15 +518,17 @@ export default function MyPackagesScreen() {
                   <View className="flex-row justify-between items-center pb-2.5 border-b border-gray-100 mb-2.5">
                     <View className="flex-row items-center gap-1.5">
                       <Ionicons name="receipt" size={16} color="#1A3A5C" />
-                      <Text className="text-xs font-semibold text-gray-700">{tx.code}</Text>
+                      <Text className="text-xs font-semibold text-gray-700">
+                        {tx.code}
+                      </Text>
                     </View>
                     <View
                       className={`px-2.5 py-0.5 rounded-full ${
                         tx.paymentStatus === "completed"
                           ? "bg-green-100"
                           : tx.paymentStatus === "pending"
-                          ? "bg-amber-100"
-                          : "bg-red-100"
+                            ? "bg-amber-100"
+                            : "bg-red-100"
                       }`}
                     >
                       <Text
@@ -482,20 +536,22 @@ export default function MyPackagesScreen() {
                           tx.paymentStatus === "completed"
                             ? "text-green-700"
                             : tx.paymentStatus === "pending"
-                            ? "text-amber-700"
-                            : "text-red-700"
+                              ? "text-amber-700"
+                              : "text-red-700"
                         }`}
                       >
                         {tx.paymentStatus === "completed"
                           ? "Thành công"
                           : tx.paymentStatus === "pending"
-                          ? "Chờ xác nhận"
-                          : "Thất bại"}
+                            ? "Chờ xác nhận"
+                            : "Thất bại"}
                       </Text>
                     </View>
                   </View>
 
-                  <Text className="text-sm font-bold text-gray-800 mb-1">{tx.packageName}</Text>
+                  <Text className="text-sm font-bold text-gray-800 mb-1">
+                    {tx.packageName}
+                  </Text>
 
                   <View className="flex-row justify-between items-center mt-2">
                     <View>
@@ -503,10 +559,12 @@ export default function MyPackagesScreen() {
                         {tx.paymentMethod === "vietqr"
                           ? "VietQR Chuyển khoản"
                           : tx.paymentMethod === "bank_transfer"
-                          ? "Chuyển khoản"
-                          : "Tiền mặt"}
+                            ? "Chuyển khoản"
+                            : "Tiền mặt"}
                       </Text>
-                      <Text className="text-xs text-gray-400 mt-0.5">{tx.createdAt}</Text>
+                      <Text className="text-xs text-gray-400 mt-0.5">
+                        {tx.createdAt}
+                      </Text>
                     </View>
                     <Text className="text-base font-extrabold text-[#C0392B]">
                       {formatVND(tx.amount)}
@@ -526,7 +584,6 @@ export default function MyPackagesScreen() {
         onRequestClose={handleCloseModal}
       >
         <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
-          
           <View className="bg-white px-5 py-4 flex-row items-center justify-between border-b border-gray-200">
             {storeStep === "checkout" ? (
               <TouchableOpacity
@@ -534,7 +591,9 @@ export default function MyPackagesScreen() {
                 className="flex-row items-center gap-1 active:opacity-70"
               >
                 <Ionicons name="chevron-back" size={22} color="#1A3A5C" />
-                <Text className="text-[#1A3A5C] text-sm font-semibold">Chọn gói khác</Text>
+                <Text className="text-[#1A3A5C] text-sm font-semibold">
+                  Chọn gói khác
+                </Text>
               </TouchableOpacity>
             ) : (
               <Text className="text-[#1A3A5C] text-xl font-bold">
@@ -548,22 +607,61 @@ export default function MyPackagesScreen() {
           </View>
 
           {storeStep === "list" && (
-            <ScrollView className="flex-1 px-4 pt-5" showsVerticalScrollIndicator={false}>
+            <ScrollView
+              className="flex-1 px-4 pt-5"
+              showsVerticalScrollIndicator={false}
+            >
               <View className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
                 <Text className="text-xs text-[#1A3A5C] font-semibold uppercase tracking-wider mb-1">
-                  🎁 Ưu đãi đặc biệt
+                  Chọn hình thức tập
                 </Text>
                 <Text className="text-sm text-gray-700">
-                  Nhập mã <Text className="font-bold text-[#C0392B]">PILATES2026</Text> để được giảm ngay 10% khi mua gói tập!
+                  Chọn gói phù hợp, hoàn tất thanh toán rồi đặt từng buổi hoặc
+                  đặt theo tuần. Bạn có thể chọn HLV khi đặt lịch.
                 </Text>
               </View>
 
+              <ScrollView
+                horizontal
+                contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
+              >
+                {[
+                  ["trial", "Tập thử 2 buổi"],
+                  ["group", "Lớp chung"],
+                  ["private_1v1", "Tập riêng 1:1"],
+                  ["semi_private_1v2", "Tập đôi 1:2"],
+                ].map(([value, label]) => (
+                  <TouchableOpacity
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: trainingFilter === value }}
+                    onPress={() => setTrainingFilter(value)}
+                    className={`rounded-xl px-3 py-2 border ${trainingFilter === value ? "bg-[#1A3A5C] border-[#1A3A5C]" : "bg-white border-gray-200"}`}
+                  >
+                    <Text
+                      className={
+                        trainingFilter === value
+                          ? "text-white"
+                          : "text-gray-700"
+                      }
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {trainingFilter === "semi_private_1v2" && (
+                <Text className="text-sm text-gray-600 mb-4">
+                  Mỗi người mua gói riêng. Lễ tân ghép hai học viên trước khi
+                  đặt cùng ca tập.
+                </Text>
+              )}
               {availableLoading ? (
                 <View className="flex-1 items-center py-12">
                   <ActivityIndicator color="#1A3A5C" />
                 </View>
-              ) : available && available.length > 0 ? (
-                available.map((pkg: any) => (
+              ) : filteredAvailable.length > 0 ? (
+                filteredAvailable.map((pkg: any) => (
                   <PackageCard
                     key={pkg.id}
                     pkg={pkg}
@@ -575,7 +673,8 @@ export default function MyPackagesScreen() {
                 <View className="items-center py-12">
                   <Ionicons name="cube-outline" size={40} color="#D1D5DB" />
                   <Text className="text-gray-400 text-sm mt-3">
-                    Hiện tại không có gói tập
+                    Chưa có gói mở bán cho hình thức này. Phòng tập sẽ cập nhật
+                    sau khi cấu hình giá.
                   </Text>
                 </View>
               )}
@@ -584,8 +683,10 @@ export default function MyPackagesScreen() {
           )}
 
           {storeStep === "checkout" && selectedPackage && (
-            <ScrollView className="flex-1 px-4 pt-4" showsVerticalScrollIndicator={false}>
-              
+            <ScrollView
+              className="flex-1 px-4 pt-4"
+              showsVerticalScrollIndicator={false}
+            >
               <View className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm mb-4">
                 <View className="flex-row items-center justify-between pb-3 border-b border-gray-100">
                   <View className="flex-1 mr-2">
@@ -606,7 +707,9 @@ export default function MyPackagesScreen() {
                 <View className="flex-row items-center justify-between pt-3">
                   <View className="flex-row items-center gap-1.5">
                     <Ionicons name="time-outline" size={16} color="#6B7280" />
-                    <Text className="text-sm text-gray-600">Thời hạn sử dụng: {days} ngày</Text>
+                    <Text className="text-sm text-gray-600">
+                      Thời hạn sử dụng: {days} ngày
+                    </Text>
                   </View>
                   <Text className="text-base font-bold text-gray-900">
                     {formatVND(originalPrice)}
@@ -643,7 +746,9 @@ export default function MyPackagesScreen() {
                       onPress={handleRemoveVoucher}
                       className="bg-red-50 border border-red-200 px-4 rounded-xl items-center justify-center active:opacity-80"
                     >
-                      <Text className="text-red-600 font-semibold text-sm">Gỡ bỏ</Text>
+                      <Text className="text-red-600 font-semibold text-sm">
+                        Gỡ bỏ
+                      </Text>
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
@@ -658,7 +763,9 @@ export default function MyPackagesScreen() {
                       {voucherLoading ? (
                         <ActivityIndicator color="white" size="small" />
                       ) : (
-                        <Text className="text-white font-bold text-sm">Áp dụng</Text>
+                        <Text className="text-white font-bold text-sm">
+                          Áp dụng
+                        </Text>
                       )}
                     </TouchableOpacity>
                   )}
@@ -667,20 +774,27 @@ export default function MyPackagesScreen() {
                 {voucherError && (
                   <View className="flex-row items-center gap-1.5 mt-2 bg-red-50 p-2.5 rounded-xl border border-red-100">
                     <Ionicons name="alert-circle" size={16} color="#DC2626" />
-                    <Text className="text-xs text-red-600 flex-1">{voucherError}</Text>
+                    <Text className="text-xs text-red-600 flex-1">
+                      {voucherError}
+                    </Text>
                   </View>
                 )}
 
                 {appliedPromo && (
                   <View className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2 flex-1">
-                      <Ionicons name="checkmark-circle" size={20} color="#059669" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#059669"
+                      />
                       <View className="flex-1">
                         <Text className="text-xs font-bold text-emerald-800">
                           {appliedPromo.code}: {appliedPromo.name}
                         </Text>
                         <Text className="text-xs text-emerald-600 mt-0.5">
-                          Tiết kiệm được {formatVND(appliedPromo.discountAmount)}
+                          Tiết kiệm được{" "}
+                          {formatVND(appliedPromo.discountAmount)}
                         </Text>
                       </View>
                     </View>
@@ -694,24 +808,38 @@ export default function MyPackagesScreen() {
 
                 {!appliedPromo && (
                   <View className="mt-3 pt-3 border-t border-gray-100">
-                    <Text className="text-xs text-gray-500 mb-2">Mã ưu đãi có sẵn:</Text>
+                    <Text className="text-xs text-gray-500 mb-2">
+                      Mã ưu đãi có sẵn:
+                    </Text>
                     <View className="flex-row flex-wrap gap-2">
                       <TouchableOpacity
                         onPress={() => handleApplyVoucher("PILATES2026")}
                         className="bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg flex-row items-center gap-1 active:opacity-75"
                       >
                         <Ionicons name="sparkles" size={12} color="#1A3A5C" />
-                        <Text className="text-xs font-bold text-[#1A3A5C]">PILATES2026</Text>
-                        <Text className="text-xs text-blue-600 font-medium">(Giảm 10%)</Text>
+                        <Text className="text-xs font-bold text-[#1A3A5C]">
+                          PILATES2026
+                        </Text>
+                        <Text className="text-xs text-blue-600 font-medium">
+                          (Giảm 10%)
+                        </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         onPress={() => handleApplyVoucher("CHAOMUNG300")}
                         className="bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg flex-row items-center gap-1 active:opacity-75"
                       >
-                        <Ionicons name="gift-outline" size={12} color="#D97706" />
-                        <Text className="text-xs font-bold text-[#D97706]">CHAOMUNG300</Text>
-                        <Text className="text-xs text-orange-600 font-medium">(-300k)</Text>
+                        <Ionicons
+                          name="gift-outline"
+                          size={12}
+                          color="#D97706"
+                        />
+                        <Text className="text-xs font-bold text-[#D97706]">
+                          CHAOMUNG300
+                        </Text>
+                        <Text className="text-xs text-orange-600 font-medium">
+                          (-300k)
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -742,7 +870,11 @@ export default function MyPackagesScreen() {
                       <Ionicons
                         name="qr-code-outline"
                         size={20}
-                        color={paymentMethod === "bank_transfer" ? "white" : "#4B5563"}
+                        color={
+                          paymentMethod === "bank_transfer"
+                            ? "white"
+                            : "#4B5563"
+                        }
                       />
                     </View>
                     <View>
@@ -761,7 +893,9 @@ export default function MyPackagesScreen() {
                         : "radio-button-off"
                     }
                     size={20}
-                    color={paymentMethod === "bank_transfer" ? "#1A3A5C" : "#9CA3AF"}
+                    color={
+                      paymentMethod === "bank_transfer" ? "#1A3A5C" : "#9CA3AF"
+                    }
                   />
                 </TouchableOpacity>
 
@@ -776,7 +910,9 @@ export default function MyPackagesScreen() {
                   <View className="flex-row items-center gap-3">
                     <View
                       className={`w-9 h-9 rounded-full items-center justify-center ${
-                        paymentMethod === "cash" ? "bg-[#1A3A5C]" : "bg-gray-100"
+                        paymentMethod === "cash"
+                          ? "bg-[#1A3A5C]"
+                          : "bg-gray-100"
                       }`}
                     >
                       <Ionicons
@@ -824,7 +960,9 @@ export default function MyPackagesScreen() {
                       <Ionicons
                         name="card-outline"
                         size={20}
-                        color={paymentMethod === "credit_card" ? "white" : "#4B5563"}
+                        color={
+                          paymentMethod === "credit_card" ? "white" : "#4B5563"
+                        }
                       />
                     </View>
                     <View>
@@ -843,7 +981,9 @@ export default function MyPackagesScreen() {
                         : "radio-button-off"
                     }
                     size={20}
-                    color={paymentMethod === "credit_card" ? "#1A3A5C" : "#9CA3AF"}
+                    color={
+                      paymentMethod === "credit_card" ? "#1A3A5C" : "#9CA3AF"
+                    }
                   />
                 </TouchableOpacity>
               </View>
@@ -876,13 +1016,17 @@ export default function MyPackagesScreen() {
                       </Text>
                     </View>
                     <View className="flex-row justify-between py-1 border-b border-blue-100">
-                      <Text className="text-xs text-gray-500">Số tài khoản:</Text>
+                      <Text className="text-xs text-gray-500">
+                        Số tài khoản:
+                      </Text>
                       <Text className="text-xs font-mono font-bold text-[#1A3A5C]">
                         8888 9999 2026
                       </Text>
                     </View>
                     <View className="flex-row justify-between py-1 border-b border-blue-100">
-                      <Text className="text-xs text-gray-500">Chủ tài khoản:</Text>
+                      <Text className="text-xs text-gray-500">
+                        Chủ tài khoản:
+                      </Text>
                       <Text className="text-xs font-bold text-gray-900">
                         CONG TY PILATES VIETNAM
                       </Text>
@@ -894,7 +1038,9 @@ export default function MyPackagesScreen() {
                       </Text>
                     </View>
                     <View className="flex-row justify-between py-1">
-                      <Text className="text-xs text-gray-500">Nội dung CK:</Text>
+                      <Text className="text-xs text-gray-500">
+                        Nội dung CK:
+                      </Text>
                       <Text className="text-xs font-mono font-bold text-gray-900">
                         {qrTransferMemo}
                       </Text>
@@ -940,15 +1086,21 @@ export default function MyPackagesScreen() {
                 <View className="mb-4 bg-red-50 border border-red-200 rounded-2xl p-4">
                   <View className="flex-row items-center gap-2 mb-1.5">
                     <Ionicons name="alert-circle" size={20} color="#DC2626" />
-                    <Text className="text-sm font-bold text-red-700">Lỗi giao dịch</Text>
+                    <Text className="text-sm font-bold text-red-700">
+                      Lỗi giao dịch
+                    </Text>
                   </View>
-                  <Text className="text-xs text-red-600 leading-4 mb-3">{checkoutError}</Text>
+                  <Text className="text-xs text-red-600 leading-4 mb-3">
+                    {checkoutError}
+                  </Text>
                   {!isAuthenticated && (
                     <TouchableOpacity
                       onPress={() => setShowAuthModal(true)}
                       className="bg-[#1A3A5C] py-2.5 rounded-xl items-center active:opacity-80"
                     >
-                      <Text className="text-white font-bold text-xs">Đăng nhập tài khoản ngay</Text>
+                      <Text className="text-white font-bold text-xs">
+                        Đăng nhập tài khoản ngay
+                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -972,7 +1124,11 @@ export default function MyPackagesScreen() {
                   </View>
                 ) : (
                   <View className="flex-row items-center gap-2">
-                    <Ionicons name="checkmark-circle-outline" size={20} color="white" />
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={20}
+                      color="white"
+                    />
                     <Text className="text-white font-bold text-base">
                       Xác nhận thanh toán {formatVND(finalPrice)}
                     </Text>
@@ -1004,21 +1160,27 @@ export default function MyPackagesScreen() {
                 </View>
 
                 <View className="flex-row justify-between pb-2 border-b border-gray-100">
-                  <Text className="text-sm text-gray-500">Số buổi sau khi kích hoạt:</Text>
+                  <Text className="text-sm text-gray-500">
+                    Số buổi sau khi kích hoạt:
+                  </Text>
                   <Text className="text-sm font-bold text-gray-900">
                     {lastPurchaseResult.totalSessions} buổi
                   </Text>
                 </View>
 
                 <View className="flex-row justify-between pb-2 border-b border-gray-100">
-                  <Text className="text-sm text-gray-500">Thời hạn sử dụng:</Text>
+                  <Text className="text-sm text-gray-500">
+                    Thời hạn sử dụng:
+                  </Text>
                   <Text className="text-sm font-bold text-gray-900">
                     {lastPurchaseResult.durationDays} ngày
                   </Text>
                 </View>
 
                 <View className="flex-row justify-between pb-2 border-b border-gray-100">
-                  <Text className="text-sm text-gray-500">Số tiền thanh toán:</Text>
+                  <Text className="text-sm text-gray-500">
+                    Số tiền thanh toán:
+                  </Text>
                   <Text className="text-sm font-bold text-[#C0392B]">
                     {formatVND(lastPurchaseResult.finalAmount)}
                   </Text>
@@ -1026,7 +1188,9 @@ export default function MyPackagesScreen() {
 
                 {lastPurchaseResult.discountAmount > 0 && (
                   <View className="flex-row justify-between pb-2 border-b border-gray-100">
-                    <Text className="text-sm text-emerald-600">Đã tiết kiệm:</Text>
+                    <Text className="text-sm text-emerald-600">
+                      Đã tiết kiệm:
+                    </Text>
                     <Text className="text-sm font-bold text-emerald-600">
                       -{formatVND(lastPurchaseResult.discountAmount)}
                     </Text>
@@ -1039,8 +1203,8 @@ export default function MyPackagesScreen() {
                     {lastPurchaseResult.paymentMethod === "bank_transfer"
                       ? "Chuyển khoản QR"
                       : lastPurchaseResult.paymentMethod === "cash"
-                      ? "Tiền mặt"
-                      : "Thẻ ngân hàng"}
+                        ? "Tiền mặt"
+                        : "Thẻ ngân hàng"}
                   </Text>
                 </View>
               </View>
@@ -1073,21 +1237,24 @@ export default function MyPackagesScreen() {
               Yêu cầu đăng nhập
             </Text>
             <Text className="text-xs text-gray-500 text-center mb-6">
-              Bạn cần đăng nhập tài khoản học viên để tiến hành mua và kích hoạt gói tập.
+              Bạn cần đăng nhập tài khoản học viên để tiến hành mua và kích hoạt
+              gói tập.
             </Text>
 
             <TouchableOpacity
               onPress={async () => {
                 setAuthLoading(true);
                 try {
-                  await login({ email: "minh.le@gmail.com", password: "Member@123" });
+                  await login({
+                    email: "minh.le@gmail.com",
+                    password: "Member@123",
+                  });
                   setShowAuthModal(false);
                   setCheckoutError(null);
                   if (selectedPackage) {
                     setStoreStep("checkout");
                   }
                 } catch {
-                  
                 } finally {
                   setAuthLoading(false);
                 }

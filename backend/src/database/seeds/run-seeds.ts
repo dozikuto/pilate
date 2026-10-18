@@ -6,16 +6,15 @@ import { Member } from '../../entities/member.entity';
 import { Instructor } from '../../entities/instructor.entity';
 import { Branch } from '../../entities/branch.entity';
 import { Room, RoomType, RoomStatus } from '../../entities/room.entity';
-import { Equipment } from '../../entities/equipment.entity';
 import { Class, ClassLevel, ClassType } from '../../entities/class.entity';
 import { ClassSchedule, ScheduleStatus } from '../../entities/class-schedule.entity';
 import { Package } from '../../entities/package.entity';
+import { preparePackageCatalog } from '../../modules/packages/package-catalog';
 import { MemberPackage, MemberPackageStatus } from '../../entities/member-package.entity';
 import { Transaction } from '../../entities/transaction.entity';
 import { Booking } from '../../entities/booking.entity';
 import { CheckIn, CheckInMethod } from '../../entities/check-in.entity';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { EquipmentType, EquipmentStatus } from '../../common/enums/equipment-status.enum';
 import { PackageType } from '../../common/enums/package-type.enum';
 import { PaymentMethod } from '../../common/enums/payment-method.enum';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
@@ -54,7 +53,6 @@ async function runSeeds() {
   const roomRepo = AppDataSource.getRepository(Room);
   const memberRepo = AppDataSource.getRepository(Member);
   const instructorRepo = AppDataSource.getRepository(Instructor);
-  const equipmentRepo = AppDataSource.getRepository(Equipment);
   const classRepo = AppDataSource.getRepository(Class);
   const scheduleRepo = AppDataSource.getRepository(ClassSchedule);
   const packageRepo = AppDataSource.getRepository(Package);
@@ -304,82 +302,29 @@ async function runSeeds() {
     }
   }
 
-  console.log('⚙️ Seeding Equipment...');
-  const countEq = await equipmentRepo.count();
-  if (countEq === 0) {
-    const eqList = [
-      { name: 'Reformer Allegro 2 #01', type: EquipmentType.REFORMER, serial: 'REF-001' },
-      { name: 'Reformer Allegro 2 #02', type: EquipmentType.REFORMER, serial: 'REF-002' },
-      { name: 'Reformer Allegro 2 #03', type: EquipmentType.REFORMER, serial: 'REF-003' },
-      { name: 'Cadillac Trapeze Table', type: EquipmentType.CADILLAC, serial: 'CAD-001' },
-      { name: 'Wunda Chair Studio', type: EquipmentType.CHAIR, serial: 'CHR-001' },
-    ];
-    for (const eq of eqList) {
-      await equipmentRepo.save(
-        equipmentRepo.create({
-          branchId: branch.id,
-          name: eq.name,
-          type: eq.type,
-          status: EquipmentStatus.AVAILABLE,
-          serialNumber: eq.serial,
-          purchaseDate: new Date('2024-01-10'),
-          lastMaintenanceDate: new Date('2024-06-10'),
-          nextMaintenanceDate: new Date('2024-12-10'),
-        }),
-      );
+  console.log('📦 Seeding Packages...');
+  await preparePackageCatalog(AppDataSource.manager);
+
+  const defaultCatalogPrices: Record<string, number> = {
+    trial_2: 400000,
+    group_8: 2000000,
+    group_10: 2400000,
+    private_4: 3200000,
+    duo_4: 2000000,
+  };
+  for (const [code, defaultPrice] of Object.entries(defaultCatalogPrices)) {
+    const pkgItem = await packageRepo.findOne({ where: { catalogCode: code } });
+    if (pkgItem && Number(pkgItem.price) <= 0) {
+      pkgItem.price = defaultPrice;
+      pkgItem.isActive = true;
+      await packageRepo.save(pkgItem);
     }
   }
 
-  console.log('📦 Seeding Packages...');
-  const countPkg = await packageRepo.count();
-  if (countPkg === 0) {
-    await packageRepo.save([
-      packageRepo.create({
-        branchId: branch.id,
-        name: 'Gói Trải Nghiệm 5 Buổi',
-        description: 'Dành cho học viên mới bắt đầu làm quen với Pilates Reformer',
-        type: PackageType.SESSION_BASED,
-        totalSessions: 5,
-        durationDays: 30,
-        price: 1500000,
-        isActive: true,
-      }),
-      packageRepo.create({
-        branchId: branch.id,
-        name: 'Gói Tiêu Chuẩn 10 Buổi',
-        description: '10 buổi tập lớp nhóm Reformer & Mat, hạn dùng 60 ngày',
-        type: PackageType.SESSION_BASED,
-        totalSessions: 10,
-        durationDays: 60,
-        price: 2800000,
-        isActive: true,
-      }),
-      packageRepo.create({
-        branchId: branch.id,
-        name: 'Gói Chuyên Sâu 20 Buổi',
-        description: '20 buổi tập kết hợp Reformer + Cadillac, hạn dùng 90 ngày',
-        type: PackageType.SESSION_BASED,
-        totalSessions: 20,
-        durationDays: 90,
-        price: 5200000,
-        isActive: true,
-      }),
-      packageRepo.create({
-        branchId: branch.id,
-        name: 'Gói Tháng Không Giới Hạn',
-        description: 'Tập không giới hạn số buổi trong 30 ngày',
-        type: PackageType.UNLIMITED,
-        durationDays: 30,
-        price: 3900000,
-        isActive: true,
-      }),
-    ]);
-  }
-
   console.log('🧘 Seeding Classes...');
-  const countClasses = await classRepo.count();
-  if (countClasses === 0) {
-    const cls1 = await classRepo.save(
+  let cls1 = await classRepo.findOne({ where: { name: 'Reformer Fundamentals' } });
+  if (!cls1) {
+    cls1 = await classRepo.save(
       classRepo.create({
         branchId: branch.id,
         name: 'Reformer Fundamentals',
@@ -387,14 +332,17 @@ async function runSeeds() {
         level: ClassLevel.BEGINNER,
         type: ClassType.GROUP,
         defaultInstructorId: coach1User.id,
-        defaultRoomId: rooms[0]?.id,
+        defaultRoomId: rooms.find((r) => r.roomType === RoomType.GROUP)?.id ?? rooms[0]?.id,
         defaultMaxCapacity: 8,
-        durationMinutes: 55,
+        durationMinutes: 60,
         price: 300000,
       }),
     );
+  }
 
-    const cls2 = await classRepo.save(
+  let cls2 = await classRepo.findOne({ where: { name: 'Pilates Cột Sống & Phục Hồi' } });
+  if (!cls2) {
+    cls2 = await classRepo.save(
       classRepo.create({
         branchId: branch.id,
         name: 'Pilates Cột Sống & Phục Hồi',
@@ -402,14 +350,17 @@ async function runSeeds() {
         level: ClassLevel.ALL,
         type: ClassType.GROUP,
         defaultInstructorId: coach2User.id,
-        defaultRoomId: rooms[0]?.id,
+        defaultRoomId: rooms.find((r) => r.roomType === RoomType.GROUP)?.id ?? rooms[0]?.id,
         defaultMaxCapacity: 8,
-        durationMinutes: 55,
+        durationMinutes: 60,
         price: 350000,
       }),
     );
+  }
 
-    const cls3 = await classRepo.save(
+  let cls3 = await classRepo.findOne({ where: { name: 'Cadillac Private 1:1' } });
+  if (!cls3) {
+    cls3 = await classRepo.save(
       classRepo.create({
         branchId: branch.id,
         name: 'Cadillac Private 1:1',
@@ -417,54 +368,83 @@ async function runSeeds() {
         level: ClassLevel.ALL,
         type: ClassType.PRIVATE,
         defaultInstructorId: coach2User.id,
-        defaultRoomId: rooms[1]?.id,
+        defaultRoomId: rooms.find((r) => r.roomType === RoomType.PRIVATE_1V1)?.id ?? rooms[0]?.id,
         defaultMaxCapacity: 1,
         durationMinutes: 60,
         price: 800000,
       }),
     );
+  }
 
-    console.log('📅 Seeding Schedules...');
+  let cls4 = await classRepo.findOne({ where: { name: 'Reformer Semi-Private 1:2 (Duo)' } });
+  if (!cls4) {
+    cls4 = await classRepo.save(
+      classRepo.create({
+        branchId: branch.id,
+        name: 'Reformer Semi-Private 1:2 (Duo)',
+        description: 'Buổi tập đôi 1 kèm 2 trên máy Reformer',
+        level: ClassLevel.ALL,
+        type: ClassType.SEMI_PRIVATE,
+        defaultInstructorId: coach1User.id,
+        defaultRoomId: rooms.find((r) => r.roomType === RoomType.SEMI_PRIVATE_1V2)?.id ?? rooms[0]?.id,
+        defaultMaxCapacity: 2,
+        durationMinutes: 60,
+        price: 500000,
+      }),
+    );
+  }
+
+  console.log('📅 Seeding Upcoming Schedules...');
+  const groupRoom = rooms.find((r) => r.roomType === RoomType.GROUP) ?? rooms[0];
+  const privRoom = rooms.find((r) => r.roomType === RoomType.PRIVATE_1V1) ?? rooms[0];
+  const duoRoom = rooms.find((r) => r.roomType === RoomType.SEMI_PRIVATE_1V2) ?? rooms[0];
+  const upcomingCount = await scheduleRepo
+    .createQueryBuilder('s')
+    .where('s.startTime > :now', { now: new Date() })
+    .getCount();
+
+  if (upcomingCount < 10) {
     const now = new Date();
-    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
       const classDate = new Date(now);
       classDate.setDate(classDate.getDate() + dayOffset);
 
-      const s1 = new Date(classDate);
-      s1.setHours(9, 0, 0, 0);
-      const e1 = new Date(classDate);
-      e1.setHours(9, 55, 0, 0);
+      const slots = [
+        { cls: cls1, coach: coach1User, room: groupRoom, startH: 8, startM: 0, endH: 9, endM: 0, cap: 8, enrolled: 2 },
+        { cls: cls1, coach: coach1User, room: groupRoom, startH: 10, startM: 0, endH: 11, endM: 0, cap: 8, enrolled: 4 },
+        { cls: cls4, coach: coach1User, room: duoRoom, startH: 14, startM: 0, endH: 15, endM: 0, cap: 2, enrolled: 0 },
+        { cls: cls1, coach: coach1User, room: groupRoom, startH: 18, startM: 0, endH: 19, endM: 0, cap: 8, enrolled: 3 },
+        { cls: cls2, coach: coach2User, room: groupRoom, startH: 9, startM: 0, endH: 10, endM: 0, cap: 8, enrolled: 3 },
+        { cls: cls3, coach: coach2User, room: privRoom, startH: 15, startM: 0, endH: 16, endM: 0, cap: 1, enrolled: 0 },
+        { cls: cls2, coach: coach2User, room: groupRoom, startH: 17, startM: 30, endH: 18, endM: 30, cap: 8, enrolled: 5 },
+        { cls: cls2, coach: coach2User, room: groupRoom, startH: 19, startM: 15, endH: 20, endM: 15, cap: 8, enrolled: 2 },
+      ];
 
-      await scheduleRepo.save(
-        scheduleRepo.create({
-          classId: cls1.id,
-          instructorId: coach1User.id,
-          roomId: rooms[0]?.id,
-          startTime: s1,
-          endTime: e1,
-          maxCapacity: 8,
-          currentEnrolled: 3,
-          status: ScheduleStatus.SCHEDULED,
-        }),
-      );
+      for (const sl of slots) {
+        const sTime = new Date(classDate);
+        sTime.setHours(sl.startH, sl.startM, 0, 0);
+        const eTime = new Date(classDate);
+        eTime.setHours(sl.endH, sl.endM, 0, 0);
+        if (sTime <= now) continue;
 
-      const s2 = new Date(classDate);
-      s2.setHours(17, 30, 0, 0);
-      const e2 = new Date(classDate);
-      e2.setHours(18, 25, 0, 0);
-
-      await scheduleRepo.save(
-        scheduleRepo.create({
-          classId: cls2.id,
-          instructorId: coach2User.id,
-          roomId: rooms[0]?.id,
-          startTime: s2,
-          endTime: e2,
-          maxCapacity: 8,
-          currentEnrolled: 5,
-          status: ScheduleStatus.SCHEDULED,
-        }),
-      );
+        const exists = await scheduleRepo.findOne({
+          where: { instructorId: sl.coach.id, startTime: sTime },
+        });
+        if (!exists) {
+          await scheduleRepo.save(
+            scheduleRepo.create({
+              classId: sl.cls.id,
+              instructorId: sl.coach.id,
+              roomId: sl.room?.id,
+              startTime: sTime,
+              endTime: eTime,
+              maxCapacity: sl.cap,
+              currentEnrolled: sl.enrolled,
+              status: ScheduleStatus.SCHEDULED,
+            }),
+          );
+        }
+      }
     }
   }
 
@@ -472,38 +452,49 @@ async function runSeeds() {
     relations: ['user'],
     where: { user: { email: 'hang.nguyen@gmail.com' } },
   });
-  const samplePkg = await packageRepo.findOne({ where: { name: 'Gói Tiêu Chuẩn 10 Buổi' } });
+  const secondMember = await memberRepo.findOne({
+    relations: ['user'],
+    where: { user: { email: 'minh.le@gmail.com' } },
+  });
+  const group10Pkg =
+    (await packageRepo.findOne({ where: { catalogCode: 'group_10' } })) ??
+    (await packageRepo.findOne({ where: { isActive: true } }));
 
-  if (firstMember && samplePkg) {
-    const existingMp = await memberPackageRepo.findOne({ where: { memberId: firstMember.id } });
-    if (!existingMp) {
-      const tx = await txRepo.save(
-        txRepo.create({
-          memberId: firstMember.id,
-          amount: samplePkg.price,
-          discountAmount: 0,
-          finalAmount: samplePkg.price,
-          paymentMethod: PaymentMethod.BANK_TRANSFER,
-          paymentStatus: PaymentStatus.COMPLETED,
-          referenceCode: `SEED-TX-${Date.now()}`,
-          branchId: branch.id,
-        }),
-      );
+  for (const m of [firstMember, secondMember]) {
+    if (m && group10Pkg) {
+      const existingMp = await memberPackageRepo.findOne({
+        where: { memberId: m.id, status: MemberPackageStatus.ACTIVE },
+      });
+      if (!existingMp) {
+        const tx = await txRepo.save(
+          txRepo.create({
+            memberId: m.id,
+            packageId: group10Pkg.id,
+            amount: group10Pkg.price,
+            discountAmount: 0,
+            finalAmount: group10Pkg.price,
+            paymentMethod: PaymentMethod.BANK_TRANSFER,
+            paymentStatus: PaymentStatus.COMPLETED,
+            referenceCode: `SEED-TX-${Date.now()}-${m.id.slice(0, 4)}`,
+            branchId: branch.id,
+          }),
+        );
 
-      const expDate = new Date();
-      expDate.setDate(expDate.getDate() + 60);
+        const expDate = new Date();
+        expDate.setDate(expDate.getDate() + 60);
 
-      await memberPackageRepo.save(
-        memberPackageRepo.create({
-          memberId: firstMember.id,
-          packageId: samplePkg.id,
-          transactionId: tx.id,
-          remainingSessions: 8,
-          startDate: new Date(),
-          expiryDate: expDate,
-          status: MemberPackageStatus.ACTIVE,
-        }),
-      );
+        await memberPackageRepo.save(
+          memberPackageRepo.create({
+            memberId: m.id,
+            packageId: group10Pkg.id,
+            transactionId: tx.id,
+            remainingSessions: group10Pkg.totalSessions || 10,
+            startDate: new Date(),
+            expiryDate: expDate,
+            status: MemberPackageStatus.ACTIVE,
+          }),
+        );
+      }
     }
   }
 

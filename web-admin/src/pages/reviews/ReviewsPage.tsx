@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Star, MessageSquare, ThumbsUp, User, Calendar, Filter, RefreshCw, Plus } from 'lucide-react'
+import { Star, MessageSquare, RefreshCw, Reply, CheckCircle2, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
-import { Input } from '@/components/ui/Input'
 import toast from 'react-hot-toast'
 import api from '@/lib/axios'
 import { formatDate } from '@/lib/utils'
@@ -17,6 +16,8 @@ interface ReviewItem {
   targetName: string
   rating: number
   comment: string
+  reply?: string
+  repliedAt?: string
   createdAt: string
 }
 
@@ -29,7 +30,9 @@ const defaultSeedReviews: ReviewItem[] = [
     targetName: 'Phòng tập & Dịch vụ chung',
     rating: 5,
     comment: 'Không gian phòng tập rất thơm và sạch sẽ. Máy Reformer Allegro 2 vận hành êm ái, nhân viên lễ tân hỗ trợ nhiệt tình.',
-    createdAt: '2026-09-22 10:30',
+    reply: 'Cảm ơn chị Thu Hằng đã tin tưởng và yêu mến PilatesMS! Hẹn gặp chị ở các buổi tập tiếp theo ạ.',
+    repliedAt: '22/09/2026',
+    createdAt: '22/09/2026',
   },
   {
     id: 'r2',
@@ -39,7 +42,7 @@ const defaultSeedReviews: ReviewItem[] = [
     targetName: 'HLV Vũ Quốc Huy',
     rating: 5,
     comment: 'Thầy Huy có chuyên môn vật lý trị liệu rất cao, bài tập giải tỏa áp lực đốt sống L4-L5 của mình hiệu quả rõ rệt sau 5 buổi.',
-    createdAt: '2026-09-23 15:45',
+    createdAt: '23/09/2026',
   },
   {
     id: 'r3',
@@ -49,7 +52,7 @@ const defaultSeedReviews: ReviewItem[] = [
     targetName: 'HLV Trần Mai Lan',
     rating: 5,
     comment: 'Cô Lan chỉnh form từng cm, bài tập siết eo và cơ đùi rất thấm nhưng không bị đau cơ sau tập. Sẽ gia hạn gói tiếp!',
-    createdAt: '2026-09-24 18:20',
+    createdAt: '24/09/2026',
   },
   {
     id: 'r4',
@@ -59,7 +62,7 @@ const defaultSeedReviews: ReviewItem[] = [
     targetName: 'Phòng tập & Dịch vụ chung',
     rating: 4,
     comment: 'Mọi thứ đều hoàn hảo, chỉ mong phòng tập bổ sung thêm máy sấy tóc cao cấp trong phòng thay đồ.',
-    createdAt: '2026-09-24 19:10',
+    createdAt: '24/09/2026',
   },
 ]
 
@@ -70,6 +73,12 @@ const fallbackInstructors = [
   { id: 'ins-4', name: 'HLV Lê Đức Anh' },
 ]
 
+const quickReplyTemplates = [
+  'Cảm ơn bạn đã tin tưởng và đánh giá tích cực! PilatesMS rất vui được đồng hành cùng bạn trong hành trình rèn luyện sức khỏe.',
+  'Cảm ơn nhận xét của bạn dành cho Huấn luyện viên. Phòng tập đã chuyển lời khen tới HLV và hẹn gặp bạn ở buổi tập tiếp theo!',
+  'Cảm ơn ý kiến đóng góp quý báu của bạn. Ban quản lý phòng tập đã ghi nhận và sẽ cải thiện ngay để mang lại trải nghiệm tốt nhất.',
+]
+
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<ReviewItem[]>(defaultSeedReviews)
   const [loading, setLoading] = useState(false)
@@ -77,17 +86,10 @@ export default function ReviewsPage() {
   const [selectedInstructorFilter, setSelectedInstructorFilter] = useState('all')
   const [instructorsList, setInstructorsList] = useState(fallbackInstructors)
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    userName: '',
-    userPhone: '',
-    targetType: 'instructor' as 'service' | 'instructor',
-    targetName: 'HLV Vũ Quốc Huy',
-    rating: 5,
-    comment: '',
-  })
+  const [replyingReview, setReplyingReview] = useState<ReviewItem | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [submittingReply, setSubmittingReply] = useState(false)
 
-  // Tải danh sách HLV từ DB
   useEffect(() => {
     async function fetchInstructors() {
       try {
@@ -99,9 +101,6 @@ export default function ReviewsPage() {
             name: i.user?.fullName || i.fullName || 'Huấn luyện viên',
           }))
           setInstructorsList(mapped)
-          if (mapped.length > 0) {
-            setFormData((prev) => ({ ...prev, targetName: mapped[0].name }))
-          }
         }
       } catch {}
     }
@@ -114,7 +113,7 @@ export default function ReviewsPage() {
       const res = await api.get('/reviews', {
         params: { limit: 50 },
       })
-      const items = res.data?.data || res.data?.items || (Array.isArray(res.data) ? res.data : [])
+      const items = res.data?.data?.items || res.data?.data || res.data?.items || (Array.isArray(res.data) ? res.data : [])
       if (Array.isArray(items) && items.length > 0) {
         const mapped: ReviewItem[] = items.map((r: any) => ({
           id: r.id,
@@ -127,6 +126,8 @@ export default function ReviewsPage() {
               : 'Phòng tập & Dịch vụ chung',
           rating: Number(r.rating) || 5,
           comment: r.comment || '(Không có nhận xét viết thêm)',
+          reply: r.reply || undefined,
+          repliedAt: r.repliedAt ? formatDate(r.repliedAt) : undefined,
           createdAt: r.createdAt ? formatDate(r.createdAt) : 'Gần đây',
         }))
 
@@ -145,54 +146,47 @@ export default function ReviewsPage() {
     fetchReviews()
   }, [fetchReviews])
 
-  const handleCreateReview = async () => {
-    if (!formData.userName.trim()) {
-      toast.error('Vui lòng nhập tên học viên')
+  const handleOpenReplyModal = (rev: ReviewItem) => {
+    setReplyingReview(rev)
+    setReplyText(rev.reply || '')
+  }
+
+  const handleSaveReply = async () => {
+    if (!replyingReview) return
+    if (!replyText.trim()) {
+      toast.error('Vui lòng nhập nội dung phản hồi cho học viên')
       return
     }
-
-    const chosenTargetName =
-      formData.targetType === 'instructor'
-        ? formData.targetName
-        : 'Phòng tập & Dịch vụ chung'
-
+    setSubmittingReply(true)
     try {
-      await api.post('/reviews', {
-        targetType: formData.targetType,
-        targetName: chosenTargetName,
-        rating: Number(formData.rating),
-        comment: formData.comment.trim() || undefined,
-      })
-    } catch {}
-
-    const newRev: ReviewItem = {
-      id: `rev-${Date.now()}`,
-      userName: formData.userName,
-      userPhone: formData.userPhone || '—',
-      targetType: formData.targetType,
-      targetName: chosenTargetName,
-      rating: Number(formData.rating),
-      comment: formData.comment || '(Đánh giá chất lượng dịch vụ)',
-      createdAt: 'Vừa xong',
+      if (replyingReview.id.length > 10) {
+        await api.patch(`/reviews/${replyingReview.id}/reply`, {
+          reply: replyText.trim(),
+        })
+      }
+      const nowFormatted = formatDate(new Date().toISOString())
+      setReviews((prev) =>
+        prev.map((item) =>
+          item.id === replyingReview.id
+            ? { ...item, reply: replyText.trim(), repliedAt: nowFormatted }
+            : item
+        )
+      )
+      toast.success(`Đã gửi phản hồi đánh giá cho học viên ${replyingReview.userName}!`)
+      setReplyingReview(null)
+      setReplyText('')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể lưu phản hồi. Vui lòng thử lại.')
+    } finally {
+      setSubmittingReply(false)
     }
-
-    setReviews((prev) => [newRev, ...prev])
-    setIsCreateModalOpen(false)
-    toast.success('Đã lưu đánh giá của học viên thành công!')
-    setFormData({
-      userName: '',
-      userPhone: '',
-      targetType: 'instructor',
-      targetName: instructorsList[0]?.name || 'HLV Vũ Quốc Huy',
-      rating: 5,
-      comment: '',
-    })
   }
 
   const filteredReviews = reviews.filter((r) => {
     if (filterType !== 'all' && r.targetType !== filterType) return false
     if (filterType === 'instructor' && selectedInstructorFilter !== 'all') {
-      return r.targetName === selectedInstructorFilter
+      return r.targetName.toLowerCase().includes(selectedInstructorFilter.toLowerCase()) ||
+        selectedInstructorFilter.toLowerCase().includes(r.targetName.toLowerCase())
     }
     return true
   })
@@ -201,13 +195,15 @@ export default function ReviewsPage() {
     ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
     : '5.0'
 
+  const repliedCount = reviews.filter((r) => !!r.reply).length
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Đánh Giá & Phản Hồi (UC1.8, R3.6)</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Đánh Giá & Phản Hồi Học Viên</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Lắng nghe ý kiến của hội viên về chất lượng dịch vụ và huấn luyện viên
+            Tiếp nhận đánh giá của học viên về dịch vụ, huấn luyện viên và gửi phản hồi trực tiếp cho học viên
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -220,14 +216,6 @@ export default function ReviewsPage() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Làm mới
-          </Button>
-
-          <Button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Thêm Đánh Giá
           </Button>
 
           <div className="w-52">
@@ -275,7 +263,7 @@ export default function ReviewsPage() {
               ))}
             </div>
             <span className="text-xs text-gray-400 mt-1 block">
-              Dựa trên {reviews.length} đánh giá
+              Dựa trên {reviews.length} đánh giá ({repliedCount}/{reviews.length} đã phản hồi)
             </span>
           </div>
           <div className="hidden sm:block h-12 w-[1px] bg-gray-200" />
@@ -297,133 +285,143 @@ export default function ReviewsPage() {
               key={rev.id}
               className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-3"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">
                     {rev.userName ? rev.userName[0] : 'U'}
                   </div>
                   <div>
-                    <div className="font-bold text-gray-900 text-sm">{rev.userName}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-gray-900 text-sm">{rev.userName}</span>
+                      {rev.reply ? (
+                        <Badge variant="success" className="flex items-center gap-1 text-[11px]">
+                          <CheckCircle2 className="w-3 h-3" /> Đã phản hồi
+                        </Badge>
+                      ) : (
+                        <Badge variant="warning" className="flex items-center gap-1 text-[11px]">
+                          <Clock className="w-3 h-3" /> Chờ phản hồi
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-400 font-mono">{rev.userPhone}</div>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-1 text-yellow-500">
-                    {[...Array(Math.max(1, Math.min(5, rev.rating)))].map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                    ))}
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-1 text-yellow-500">
+                      {[...Array(Math.max(1, Math.min(5, rev.rating)))].map((_, i) => (
+                        <Star key={i} className="w-3.5 h-3.5 fill-current" />
+                      ))}
+                    </div>
+                    <span className="text-[11px] text-gray-400">{rev.createdAt}</span>
                   </div>
-                  <span className="text-[11px] text-gray-400">{rev.createdAt}</span>
+                  <Button
+                    size="sm"
+                    variant={rev.reply ? 'outline' : 'primary'}
+                    onClick={() => handleOpenReplyModal(rev)}
+                    className="flex items-center gap-1.5 text-xs"
+                  >
+                    <Reply className="w-3.5 h-3.5" />
+                    {rev.reply ? 'Sửa phản hồi' : 'Phản hồi học viên'}
+                  </Button>
                 </div>
               </div>
 
-              <div className="pt-1">
-                <Badge variant={rev.targetType === 'instructor' ? 'info' : 'secondary'} className="mb-2">
+              <div className="pt-1 space-y-2.5">
+                <Badge variant={rev.targetType === 'instructor' ? 'info' : 'secondary'}>
                   {rev.targetName}
                 </Badge>
                 <p className="text-sm text-gray-700 leading-relaxed bg-gray-50/60 p-3.5 rounded-xl border border-gray-100">
                   "{rev.comment}"
                 </p>
+
+                {rev.reply && (
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-3.5 ml-4 space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-primary flex items-center gap-1.5">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Phản hồi gửi học viên {rev.userName}
+                      </span>
+                      {rev.repliedAt && (
+                        <span className="text-gray-400 text-[11px]">{rev.repliedAt}</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-700 leading-relaxed">{rev.reply}</p>
+                  </div>
+                )}
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* Modal Thêm Đánh Giá Mới */}
-      {isCreateModalOpen && (
+      {/* Modal Phản Hồi Đánh Giá Cho Học Viên */}
+      {replyingReview && (
         <Modal
-          open={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          title="Ghi Nhận Đánh Giá Của Học Viên"
+          open={!!replyingReview}
+          onClose={() => !submittingReply && setReplyingReview(null)}
+          title={`Phản Hồi Đánh Giá Cho Học Viên — ${replyingReview.userName}`}
         >
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Họ tên học viên *</label>
-                <Input
-                  placeholder="Ví dụ: Nguyễn Thu Hằng"
-                  value={formData.userName}
-                  onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
-                />
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gray-900 text-sm">{replyingReview.userName}</span>
+                  <Badge variant={replyingReview.targetType === 'instructor' ? 'info' : 'secondary'}>
+                    {replyingReview.targetName}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-0.5 text-yellow-500">
+                  {[...Array(Math.max(1, Math.min(5, replyingReview.rating)))].map((_, i) => (
+                    <Star key={i} className="w-3.5 h-3.5 fill-current" />
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Số điện thoại</label>
-                <Input
-                  placeholder="0981234567"
-                  value={formData.userPhone}
-                  onChange={(e) => setFormData({ ...formData, userPhone: e.target.value })}
-                />
-              </div>
+              <p className="text-sm text-gray-700 italic">"{replyingReview.comment}"</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Đối tượng đánh giá</label>
-                <Select
-                  options={[
-                    { value: 'instructor', label: 'Huấn luyện viên' },
-                    { value: 'service', label: 'Dịch vụ & Phòng tập' },
-                  ]}
-                  value={formData.targetType}
-                  onChange={(val) => setFormData({ ...formData, targetType: val as any })}
-                  placeholder=""
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Số sao đánh giá</label>
-                <Select
-                  options={[
-                    { value: '5', label: '⭐⭐⭐⭐⭐ (5 sao - Tuyệt vời)' },
-                    { value: '4', label: '⭐⭐⭐⭐ (4 sao - Rất tốt)' },
-                    { value: '3', label: '⭐⭐⭐ (3 sao - Tạm ổn)' },
-                    { value: '2', label: '⭐⭐ (2 sao - Cần cải thiện)' },
-                    { value: '1', label: '⭐ (1 sao - Kém)' },
-                  ]}
-                  value={String(formData.rating)}
-                  onChange={(val) => setFormData({ ...formData, rating: Number(val) })}
-                  placeholder=""
-                />
-              </div>
-            </div>
-
-            {/* CHỖ CHỌN GIÁO VIÊN / HUẤN LUYỆN VIÊN */}
-            {formData.targetType === 'instructor' && (
-              <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200">
-                <label className="text-sm font-semibold text-amber-900 block mb-1">
-                  Chọn Giáo viên / Huấn luyện viên được đánh giá *
-                </label>
-                <Select
-                  options={instructorsList.map((ins) => ({
-                    value: ins.name,
-                    label: ins.name,
-                  }))}
-                  value={formData.targetName}
-                  onChange={(val) => setFormData({ ...formData, targetName: val })}
-                  placeholder=""
-                />
-              </div>
-            )}
 
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">Nội dung nhận xét</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider block mb-2">
+                Mẫu phản hồi nhanh
+              </label>
+              <div className="space-y-1.5">
+                {quickReplyTemplates.map((tpl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setReplyText(tpl)}
+                    className="w-full text-left text-xs text-gray-600 hover:text-primary hover:bg-blue-50/60 border border-gray-200 hover:border-blue-200 rounded-lg px-3 py-2 transition-colors"
+                  >
+                    {tpl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">
+                Nội dung phản hồi gửi học viên *
+              </label>
               <textarea
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[90px]"
-                placeholder="Ý kiến nhận xét của học viên về chuyên môn, thái độ hướng dẫn, cơ sở vật chất..."
-                value={formData.comment}
-                onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[100px]"
+                placeholder="Nhập lời cảm ơn hoặc phản hồi giải đáp cho học viên..."
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
               />
             </div>
           </div>
 
           <ModalFooter>
-            <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+            <Button
+              variant="outline"
+              disabled={submittingReply}
+              onClick={() => setReplyingReview(null)}
+            >
               Hủy
             </Button>
-            <Button onClick={handleCreateReview}>
-              Lưu Đánh Giá
+            <Button onClick={handleSaveReply} disabled={submittingReply}>
+              {submittingReply ? 'Đang gửi...' : 'Gửi Phản Hồi'}
             </Button>
           </ModalFooter>
         </Modal>

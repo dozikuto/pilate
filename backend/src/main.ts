@@ -54,8 +54,6 @@ async function bootstrap() {
     .addTag('Users', 'User management')
     .addTag('Members', 'Member management')
     .addTag('Instructors', 'Instructor management')
-    .addTag('Branches', 'Branch & Room management')
-    .addTag('Equipment', 'Equipment management')
     .addTag('Classes', 'Class & Schedule management')
     .addTag('Bookings', 'Booking management')
     .addTag('Packages', 'Package & Member Package management')
@@ -65,8 +63,7 @@ async function bootstrap() {
     .addTag('Reviews', 'Customer & Instructor reviews and ratings (UC1.8, R3.6)')
     .addTag('Teaching', 'Instructor teaching, workout plans & student progress (R3.1-R3.7)')
     .addTag('Promotions', 'Promotions & discount vouchers (R5.2, R5.3)')
-    .addTag('System', 'System configuration, audit logs, backup & restore (R7.4-R7.7)')
-    .addTag('Products', 'Store retail products & merchandise (UC5.1)')
+    .addTag('System', 'System configuration, backup & restore')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

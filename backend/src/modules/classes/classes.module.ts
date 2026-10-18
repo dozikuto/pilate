@@ -5,7 +5,6 @@ import { ClassSchedule } from "../../entities/class-schedule.entity";
 import { Member } from "../../entities/member.entity";
 import { Booking } from "../../entities/booking.entity";
 import { MemberPackage } from "../../entities/member-package.entity";
-import { PrivateSessionRequest } from "../../entities/private-session-request.entity";
 import { ClassesService } from "./classes.service";
 import { ClassesController } from "./classes.controller";
 import { BookingsModule } from "../bookings/bookings.module";
@@ -19,7 +18,6 @@ import { BookingsModule } from "../bookings/bookings.module";
       Member,
       Booking,
       MemberPackage,
-      PrivateSessionRequest,
     ]),
   ],
   controllers: [ClassesController],

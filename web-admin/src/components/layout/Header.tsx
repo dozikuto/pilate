@@ -1,4 +1,4 @@
-import { Menu, Bell, LogOut, User } from 'lucide-react'
+import { Menu, LogOut, User } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { getInitials, getAvatarColor } from '@/lib/utils'
@@ -25,11 +25,6 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       <div className="flex items-center gap-2">
         
-        <button className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors relative">
-          <Bell size={20} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full" />
-        </button>
-
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}

@@ -5,13 +5,11 @@ import {
   Patch,
   Body,
   Param,
-  Query,
   UseGuards,
   Res,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { SystemService } from "./system.service";
-import { PaginationDto } from "../../common/dto/pagination.dto";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
@@ -27,12 +25,6 @@ import { Response } from "express";
 @Controller("system")
 export class SystemController {
   constructor(private readonly systemService: SystemService) {}
-
-  @Get("logs")
-  @ApiOperation({ summary: "Xem nhật ký hệ thống (R7.5)" })
-  getLogs(@Query() pagination: PaginationDto) {
-    return this.systemService.getAuditLogs(pagination);
-  }
 
   @Post("backup")
   @ApiOperation({ summary: "Tạo bản sao lưu dữ liệu hệ thống (R7.6)" })

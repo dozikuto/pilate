@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Search, Filter, Download, ArrowUpRight, CheckCircle2,
   Clock, AlertCircle, Printer, FileText, X, Check
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
@@ -18,7 +19,7 @@ interface TxItem {
   memberPhone: string
   packageName: string
   amount: number
-  paymentMethod: 'vietqr' | 'cash' | 'transfer' | 'vnpay'
+  paymentMethod: string
   paymentStatus: 'completed' | 'pending' | 'failed'
   createdAt: string
 }
@@ -96,44 +97,85 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TxItem[]>(mockTransactions)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
   const [selectedTxForInvoice, setSelectedTxForInvoice] = useState<TxItem | null>(null)
 
-  useEffect(() => {
-    api.get('/transactions')
+  const fetchTransactions = useCallback(() => {
+    api.get('/transactions?limit=100')
       .then((res) => {
         const items = res.data?.data?.items || res.data?.data
         if (Array.isArray(items) && items.length > 0) {
-          const mapped: TxItem[] = items.map((it: any) => ({
-            id: it.id,
-            code: it.referenceCode || `TX-${it.id.slice(0, 8).toUpperCase()}`,
-            memberName: it.member?.user?.fullName || it.memberName || 'Học viên',
-            memberPhone: it.member?.user?.phone || it.memberPhone || '—',
-            packageName: it.package?.name || it.packageName || 'Gói tập Pilates',
-            amount: Number(it.finalAmount || it.amount || 0),
-            paymentMethod: it.paymentMethod || 'vietqr',
-            paymentStatus: it.paymentStatus || 'completed',
-            createdAt: it.createdAt ? it.createdAt.replace('T', ' ').slice(0, 19) : 'Hôm nay',
-          }))
+          const mapped: TxItem[] = items.map((it: any) => {
+            const notePackageName =
+              typeof it.notes === 'string' && it.notes.includes('mua gói ')
+                ? it.notes.split('mua gói ')[1]
+                : undefined
+            return {
+              id: it.id,
+              code: it.referenceCode || `TX-${it.id.slice(0, 8).toUpperCase()}`,
+              memberName: it.member?.user?.fullName || it.memberName || 'Học viên',
+              memberPhone: it.member?.user?.phone || it.memberPhone || '—',
+              packageName:
+                it.package?.name || it.packageName || notePackageName || 'Gói tập Pilates',
+              amount: Number(it.finalAmount || it.amount || 0),
+              paymentMethod: it.paymentMethod || 'vietqr',
+              paymentStatus: it.paymentStatus || 'completed',
+              createdAt: it.createdAt ? it.createdAt.replace('T', ' ').slice(0, 19) : 'Hôm nay',
+            }
+          })
           setTransactions(mapped)
         }
       })
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    fetchTransactions()
+  }, [fetchTransactions])
+
+  const handleConfirmPayment = async (tx: TxItem) => {
+    setConfirmingId(tx.id)
+    try {
+      await api.post(`/transactions/${tx.id}/confirm`, {})
+      setTransactions((prev) =>
+        prev.map((item) =>
+          item.id === tx.id ? { ...item, paymentStatus: 'completed' } : item
+        )
+      )
+      toast.success(
+        `Đã xác nhận thanh toán & kích hoạt "${tx.packageName}" cho học viên ${tx.memberName}!`
+      )
+      fetchTransactions()
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        'Không thể xác nhận giao dịch. Vui lòng thử lại.'
+      toast.error(msg)
+    } finally {
+      setConfirmingId(null)
+    }
+  }
+
   const totalAmount = transactions
     .filter((t) => t.paymentStatus === 'completed')
     .reduce((sum, t) => sum + t.amount, 0)
+
+  const pendingCount = transactions.filter((t) => t.paymentStatus === 'pending').length
 
   const getMethodBadge = (m: string) => {
     switch (m) {
       case 'vietqr':
         return <Badge variant="default">VietQR</Badge>
-      case 'cash':
-        return <Badge variant="secondary">Tiền mặt</Badge>
+      case 'bank_transfer':
+        return <Badge variant="info">Chuyển khoản QR</Badge>
       case 'transfer':
         return <Badge variant="info">Chuyển khoản</Badge>
+      case 'credit_card':
+        return <Badge variant="default">Thẻ ngân hàng</Badge>
+      case 'cash':
+        return <Badge variant="secondary">Tiền mặt</Badge>
       case 'vnpay':
         return <Badge variant="default">VNPay</Badge>
       default:
@@ -213,7 +255,7 @@ export default function TransactionsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Quản Lý Giao Dịch & Hóa Đơn</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Theo dõi dòng tiền thanh toán gói tập, tra cứu biên lai và xuất hóa đơn dịch vụ
+            Theo dõi dòng tiền thanh toán gói tập, xác nhận kích hoạt gói tập và xuất hóa đơn dịch vụ
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -231,6 +273,7 @@ export default function TransactionsPage() {
           <div className="text-3xl font-black mt-1">{formatCurrency(totalAmount)}</div>
           <p className="text-xs text-blue-200 mt-1">
             Tính trên {transactions.filter((t) => t.paymentStatus === 'completed').length} giao dịch thành công
+            {pendingCount > 0 ? ` • ${pendingCount} giao dịch đang chờ xác nhận` : ''}
           </p>
         </div>
         <div className="p-3 bg-white/10 rounded-xl">
@@ -253,7 +296,7 @@ export default function TransactionsPage() {
             options={[
               { value: 'all', label: 'Tất cả trạng thái' },
               { value: 'completed', label: 'Thành công' },
-              { value: 'pending', label: 'Chờ xử lý' },
+              { value: 'pending', label: `Chờ xử lý (${pendingCount})` },
             ]}
             value={statusFilter}
             onChange={(val) => setStatusFilter(val)}
@@ -273,7 +316,7 @@ export default function TransactionsPage() {
                 <th className="px-5 py-3.5">Phương Thức</th>
                 <th className="px-5 py-3.5">Trạng Thái</th>
                 <th className="px-5 py-3.5">Thời Gian</th>
-                <th className="px-5 py-3.5 text-right">Hóa Đơn</th>
+                <th className="px-5 py-3.5 text-right">Thao Tác & Hóa Đơn</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
@@ -294,14 +337,27 @@ export default function TransactionsPage() {
                   <td className="px-5 py-4">{getStatusBadge(tx.paymentStatus)}</td>
                   <td className="px-5 py-4 text-xs text-gray-500">{tx.createdAt}</td>
                   <td className="px-5 py-4 text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleOpenInvoice(tx)}
-                      className="text-xs flex items-center gap-1.5 ml-auto border-blue-200 text-blue-700 hover:bg-blue-50"
-                    >
-                      <Printer className="w-3.5 h-3.5" /> In Hóa Đơn
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      {tx.paymentStatus === 'pending' && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleConfirmPayment(tx)}
+                          disabled={confirmingId === tx.id}
+                          className="text-xs flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-none shadow-sm"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {confirmingId === tx.id ? 'Đang duyệt...' : 'Xác nhận TT'}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenInvoice(tx)}
+                        className="text-xs flex items-center gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> In Hóa Đơn
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

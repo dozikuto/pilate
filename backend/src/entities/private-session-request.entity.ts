@@ -2,19 +2,15 @@ import {
   Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn,
 } from 'typeorm';
 import { User } from './user.entity';
+import { Package } from './package.entity';
+import { PrivateSessionType } from '../common/enums/private-session-type.enum';
+export { PrivateSessionType } from '../common/enums/private-session-type.enum';
 
 export enum PrivateSessionStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
   CANCELLED = 'cancelled',
-}
-
-export enum PrivateSessionType {
-  PRIVATE_1V1 = 'private_1v1',
-  SEMI_PRIVATE_1V2 = 'semi_private_1v2',
-  SMALL_GROUP_1V3 = 'small_group_1v3',
-  SMALL_GROUP_1V4 = 'small_group_1v4',
 }
 
 @Entity('private_session_requests')
@@ -27,6 +23,13 @@ export class PrivateSessionRequest {
 
   @Column({ name: 'instructor_user_id' })
   instructorUserId: string;
+
+  @Column({ name: 'package_id', nullable: true })
+  packageId: string;
+
+  @ManyToOne(() => Package, { nullable: true })
+  @JoinColumn({ name: 'package_id' })
+  package: Package;
 
   @Column({ name: 'start_time', type: 'timestamp' })
   startTime: Date;

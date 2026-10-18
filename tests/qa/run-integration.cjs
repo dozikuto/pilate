@@ -76,6 +76,13 @@ function scheduleBody(changes = {}) {
   return { classId: fixtures.cls.id, roomId: fixtures.room.id, instructorId: fixtures.coach.user.id, maxCapacity: 4, startTime: start.toISOString(), endTime: new Date(start.getTime() + 3600000).toISOString(), ...changes };
 }
 async function schedule(changes = {}) { return api('/schedules', 'POST', scheduleBody(changes)); }
+function recurringBody(offset = 0, changes = {}) {
+  const first = new Date(dateBase.getTime() + (260 + offset) * 86400000);
+  while (first.getUTCDay() !== 1) first.setUTCDate(first.getUTCDate() + 1);
+  return { classId: fixtures.cls.id, instructorId: fixtures.coach.user.id, roomId: fixtures.room.id, maxCapacity: 4,
+    startDate: first.toISOString().slice(0, 10), endDate: new Date(first.getTime() + 13 * 86400000).toISOString().slice(0, 10),
+    weekdays: [2, 6], startTime: '06:30', endTime: '07:30', ...changes };
+}
 async function initializeFixtures() {
   const branch = await save('Branch', { name: 'QA Pilates', address: 'QA only', isActive: true });
   fixtures = { branch };
@@ -98,6 +105,7 @@ async function initializeFixtures() {
   fixtures.room2 = await save('Room', { branchId: branch.id, name: 'QA riêng 1', capacity: 1, roomType: 'private_1v1' });
   fixtures.cls = await save('Class', { branchId: branch.id, name: 'QA Pilates', defaultMaxCapacity: 4, durationMinutes: 60, price: 200000 });
   fixtures.pkg = await save('Package', { name: 'QA 10 buổi', type: 'session_based', price: 1000000, totalSessions: 10, durationDays: 180 });
+  fixtures.privatePkg = await save('Package', { name: 'QA tập riêng 1:1', type: 'session_based', price: 1500000, totalSessions: 5, durationDays: 60, privateSessionEnabled: true, privateSessionType: 'private_1v1', privateSessionDurationMinutes: 60 });
   for (const key of ['member', 'member2']) await assign(fixtures[key].member);
 }
 async function runLegacy(script) {
@@ -117,6 +125,241 @@ async function runLegacy(script) {
   console.log(`LEGACY ${script}: exit=${exitCode}, failure lines=${legacy.at(-1).failureLines.length}`);
 }
 async function suite() {
+  await test('MEMBER-DETAIL-RELATIONS', 'Chi tiết học viên có đủ gói, lịch đặt và check-in gắn với đúng lớp/HLV', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const booking = await api(`/schedules/${s.id}/book`, 'POST', undefined, m);
+    const ci = await save('CheckIn', { memberId: m.member.id, scheduleId: s.id, bookingId: booking.bookingId, checkInTime: new Date(), method: 'manual' });
+    const profile = await api(`/members/${m.member.id}`);
+    assert.equal(profile.user.fullName, m.user.fullName); assert.equal(profile.memberPackages[0].id, mp.id);
+    assert.equal(profile.bookings[0].schedule.class.name, fixtures.cls.name);
+    assert.equal(profile.bookings[0].schedule.instructor.id, fixtures.coach.user.id);
+    const checkIn = profile.checkIns.find(v => v.id === ci.id); assert.equal(checkIn.schedule.class.name, fixtures.cls.name);
+    assert.ok(!('passwordHash' in profile.user));
+    await rejected(`/members/${m.member.id}`, 'GET', undefined, 'member2', [403]);
+  });
+  await test('WEEKLY-CREATE-PREVIEW', 'Xem trước đúng Thứ 3/Thứ 7 theo giờ Việt Nam và không ghi dữ liệu', async () => {
+    const body = recurringBody(); const before = await repo('ClassSchedule').count();
+    const preview = await api('/schedules/recurring/preview', 'POST', body, 'admin', 200);
+    assert.equal(preview.totalCount, 4); assert.equal(preview.conflictCount, 0);
+    assert.deepEqual(preview.occurrences.map(v => new Date(`${v.date}T00:00:00Z`).getUTCDay()), [2, 6, 2, 6]);
+    assert.equal(new Date(preview.occurrences[0].startTime).toISOString().slice(11, 16), '23:30');
+    assert.equal(await repo('ClassSchedule').count(), before);
+    const result = await api('/schedules/recurring', 'POST', body);
+    assert.equal(result.createdCount, 4);
+    for (const item of result.schedules) {
+      const row = await repo('ClassSchedule').findOneBy({ id: item.id });
+      assert.equal(row.isRecurring, true); assert.deepEqual(JSON.parse(row.recurringRule).weekdays, [2, 6]);
+      assert.equal(row.maxCapacity, 4);
+    }
+  });
+  await test('WEEKLY-CREATE-CONFLICT-ROLLBACK', 'Báo ngày trùng phòng/HLV và không tạo dở dang các ngày khác', async () => {
+    const body = recurringBody(21); const firstPreview = await api('/schedules/recurring/preview', 'POST', body);
+    const collision = firstPreview.occurrences[2];
+    await schedule({ startTime: collision.startTime, endTime: collision.endTime });
+    const before = await repo('ClassSchedule').count();
+    const preview = await api('/schedules/recurring/preview', 'POST', body);
+    assert.equal(preview.conflictCount, 1);
+    assert.deepEqual(preview.occurrences[2].conflicts.sort(), ['Trùng lịch HLV', 'Trùng phòng tập'].sort());
+    await rejected('/schedules/recurring', 'POST', body);
+    assert.equal(await repo('ClassSchedule').count(), before);
+  });
+  await test('WEEKLY-CREATE-COACH-CONFLICT', 'Trùng HLV ở phòng khác vẫn bị chặn', async () => {
+    const body = recurringBody(42); const preview = await api('/schedules/recurring/preview', 'POST', body);
+    await schedule({ startTime: preview.occurrences[0].startTime, endTime: preview.occurrences[0].endTime, roomId: fixtures.room2.id, maxCapacity: 1 });
+    const after = await api('/schedules/recurring/preview', 'POST', body);
+    assert.deepEqual(after.occurrences[0].conflicts, ['Trùng lịch HLV']);
+    await rejected('/schedules/recurring', 'POST', body);
+  });
+  await test('WEEKLY-CREATE-CONCURRENT', 'Hai lần tạo đồng thời chỉ tạo một chuỗi lịch', async () => {
+    const body = recurringBody(63); const before = await repo('ClassSchedule').count();
+    const responses = await Promise.all([raw('/schedules/recurring', 'POST', body), raw('/schedules/recurring', 'POST', body)]);
+    assert.deepEqual(responses.map(v => v.status).sort(), [201, 400]);
+    assert.equal(await repo('ClassSchedule').count(), before + 4);
+  });
+  await test('WEEKLY-CREATE-VALIDATION', 'Chặn khoảng ngày, thứ, giờ và số lượng lịch không hợp lệ', async () => {
+    const body = recurringBody(84);
+    const endTooFar = new Date(Date.parse(body.startDate) + 366 * 86400000).toISOString().slice(0, 10);
+    const manyDays = new Date(Date.parse(body.startDate) + 104 * 86400000).toISOString().slice(0, 10);
+    for (const changes of [{ weekdays: [] }, { weekdays: [2, 2] }, { weekdays: [7] }, { weekdays: [-1] },
+      { startDate: '2027-02-30' }, { endDate: '2000-01-01' }, { endDate: endTooFar },
+      { endDate: body.startDate }, { startTime: '25:00' }, { endTime: '06:00' },
+      { weekdays: [0, 1, 2, 3, 4, 5, 6], endDate: manyDays }]) {
+      for (const endpoint of ['/schedules/recurring/preview', '/schedules/recurring']) await rejected(endpoint, 'POST', { ...body, ...changes });
+    }
+  });
+  await test('WEEKLY-CREATE-ROLES', 'Admin/lễ tân được tạo, HLV và học viên bị chặn', async () => {
+    const body = recurringBody(105);
+    for (const actor of ['member', 'coach']) for (const endpoint of ['/schedules/recurring/preview', '/schedules/recurring']) await rejected(endpoint, 'POST', body, actor, [403]);
+    await api('/schedules/recurring/preview', 'POST', body, 'staff', 200);
+    const result = await api('/schedules/recurring', 'POST', body, 'staff'); assert.equal(result.createdCount, 4);
+  });
+  await test('WEEKLY-CREATE-RESOURCES', 'Xem trước và tạo đều chặn phòng/HLV/lớp/sức chứa sai', async () => {
+    const body = recurringBody(126);
+    for (const changes of [{ classId: randomUUID() }, { instructorId: fixtures.member.user.id }, { roomId: randomUUID() }, { maxCapacity: 1000 }]) {
+      for (const endpoint of ['/schedules/recurring/preview', '/schedules/recurring']) await rejected(endpoint, 'POST', { ...body, ...changes }, 'admin', [400, 404]);
+    }
+  });
+  await test('PACKAGE-BOOK-FIVE', 'Gói 5 buổi chọn 5 lịch, trừ đúng gói và đồng bộ hai vai trò', async () => {
+    const m = await newMember();
+    const pkg = await save('Package', { name: 'QA 5 buổi', type: 'session_based', price: 500000, totalSessions: 5, durationDays: 180 });
+    const mp = await assign(m.member, { packageId: pkg.id, remainingSessions: 5 });
+    const other = await assign(m.member);
+    const schedules = []; for (let i = 0; i < 5; i++) schedules.push(await schedule());
+    const result = await api('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: schedules.map(s => s.id) }, m, 201);
+    assert.equal(result.bookedCount, 5); assert.equal(result.remainingSessions, 0);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: other.id })).remainingSessions, 10);
+    for (const s of schedules) {
+      const b = await repo('Booking').findOneBy({ scheduleId: s.id, memberId: m.member.id });
+      assert.equal(b.memberPackageId, mp.id); assert.equal(b.sessionDeducted, true); assert.equal(b.status, 'confirmed');
+      const filter = `?startDate=${encodeURIComponent(s.startTime)}&endDate=${encodeURIComponent(s.endTime)}`;
+      const learner = (await api('/schedules' + filter, 'GET', undefined, m)).find(v => v.id === s.id);
+      assert.equal(learner.isBooked, true); assert.equal(learner.bookedMemberPackageId, mp.id); assert.equal(learner.bookings, undefined);
+      const admin = (await api('/schedules' + filter)).find(v => v.id === s.id);
+      assert.ok(admin.bookings.some(v => v.memberPackageId === mp.id));
+      assert.equal(admin.bookings.find(v => v.id === b.id)?.spotNumber, b.spotNumber);
+    }
+    const mine = (await api('/members/me/packages', 'GET', undefined, m)).find(p => p.id === mp.id);
+    assert.equal(mine.remainingSessions, 0); assert.equal(mine.usedSessions, 5);
+    await api(`/schedules/${schedules[0].id}/book`, 'DELETE', undefined, m);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 1);
+  });
+  await test('SCHEDULE-SPOT-SYNC', 'Admin nhận đúng chỗ, tên và sĩ số sau khi đặt/hủy/điểm danh', async () => {
+    const first = await newMember({ fullName: 'QA Chỗ số 2' }); const second = await newMember({ fullName: 'QA Chỗ số 4' });
+    await assign(first.member); await assign(second.member); const s = await schedule({ maxCapacity: 4 });
+    const b1 = await api('/bookings', 'POST', { memberId: first.member.id, scheduleId: s.id, spotNumber: 2 }, first);
+    const b2 = await api('/bookings', 'POST', { memberId: second.member.id, scheduleId: s.id, spotNumber: 4 }, second);
+    const filter = `?startDate=${encodeURIComponent(s.startTime)}&endDate=${encodeURIComponent(s.endTime)}`;
+    let admin = (await api('/schedules' + filter)).find(v => v.id === s.id);
+    assert.equal(admin.currentEnrolled, 2); assert.deepEqual(admin.bookings.map(b => b.spotNumber).sort(), [2, 4]);
+    assert.equal(admin.bookings.find(b => b.id === b2.id).member.user.fullName, 'QA Chỗ số 4');
+    await api(`/bookings/${b1.id}/cancel`, 'PATCH', {}, first);
+    admin = (await api('/schedules' + filter)).find(v => v.id === s.id);
+    assert.equal(admin.currentEnrolled, 1); assert.deepEqual(admin.bookings.map(b => b.spotNumber), [4]);
+    await repo('Booking').update(b2.id, { status: 'attended' });
+    admin = (await api('/schedules' + filter)).find(v => v.id === s.id);
+    assert.equal(admin.bookings[0].status, 'attended'); assert.equal(admin.bookings[0].spotNumber, 4);
+    const learner = (await api('/schedules' + filter, 'GET', undefined, first)).find(v => v.id === s.id);
+    assert.equal(learner.bookings, undefined);
+  });
+  await test('PACKAGE-BOOK-OVER-QUOTA', 'Không đủ buổi phải rollback cả booking, sĩ số và số dư', async () => {
+    const m = await newMember(); const mp = await assign(m.member, { remainingSessions: 2 });
+    const ss = [await schedule(), await schedule(), await schedule()];
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: ss.map(s => s.id) }, m);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id }), 0);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 2);
+    for (const s of ss) assert.equal((await repo('ClassSchedule').findOneBy({ id: s.id })).currentEnrolled, 0);
+  });
+  await test('PACKAGE-BOOK-VALIDATION', 'Chặn lịch trùng ID, rỗng, quá 100 buổi, UUID sai và thiếu gói', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    for (const scheduleIds of [[], [s.id, s.id], ['bad-id'], Array.from({ length: 101 }, () => randomUUID())])
+      await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds }, m);
+    await rejected('/bookings/package-schedules', 'POST', { scheduleIds: [s.id] }, m);
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: randomUUID(), scheduleIds: [s.id] }, m);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 10);
+  });
+  await test('PACKAGE-BOOK-OWNERSHIP', 'Không dùng gói người khác và không cho khách/HLV gọi API học viên', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const body = { memberPackageId: mp.id, scheduleIds: [s.id] };
+    await rejected('/bookings/package-schedules', 'POST', body, 'member2');
+    await rejected('/bookings/package-schedules', 'POST', body, null, [401]);
+    await rejected('/bookings/package-schedules', 'POST', body, 'coach', [403]);
+  });
+  await test('PACKAGE-BOOK-FULL-ROLLBACK', 'Một lớp đầy không tạo đặt chỗ hay danh sách chờ cho cả lần chọn', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const ss = [await schedule(), await schedule()];
+    const occupants = []; for (let i = 0; i < 4; i++) {
+      const other = await newMember(); await assign(other.member); occupants.push(other);
+      await api(`/schedules/${ss[1].id}/book`, 'POST', undefined, other);
+    }
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: ss.map(s => s.id) }, m);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id }), 0);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 10);
+  });
+  await test('PACKAGE-BOOK-OVERLAP', 'Hai buổi trùng giờ không được trừ dở dang', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const sameTime = await save('ClassSchedule', { classId: fixtures.cls.id, roomId: fixtures.room2.id, instructorId: fixtures.coach2.user.id,
+      startTime: new Date(s.startTime), endTime: new Date(s.endTime), maxCapacity: 1 });
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [s.id, sameTime.id] }, m);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id }), 0);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 10);
+  });
+  await test('PACKAGE-BOOK-DATES-STATUS', 'Chặn gói hết hạn, chưa bắt đầu, bị khóa và lịch quá giờ/hủy', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const body = { memberPackageId: mp.id, scheduleIds: [s.id] };
+    for (const changes of [{ expiryDate: new Date() }, { startDate: new Date(Date.now() + 86400000) }, { status: 'suspended' }]) {
+      const original = await repo('MemberPackage').findOneBy({ id: mp.id });
+      await repo('MemberPackage').update(mp.id, changes); await rejected('/bookings/package-schedules', 'POST', body, m);
+      await repo('MemberPackage').save(original);
+    }
+    await repo('ClassSchedule').update(s.id, { status: 'cancelled' });
+    await rejected('/bookings/package-schedules', 'POST', body, m);
+    await repo('ClassSchedule').update(s.id, { status: 'scheduled', startTime: new Date(Date.now() - 60000) });
+    await rejected('/bookings/package-schedules', 'POST', body, m);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id }), 0);
+  });
+  await test('PACKAGE-BOOK-TRAINING-CONFIG', 'Tôn trọng tập lớp/tập riêng, tỉ lệ HLV và thời lượng trên mọi đường đặt lịch', async () => {
+    const m = await newMember(); const mp = await assign(m.member, { packageId: fixtures.privatePkg.id, remainingSessions: 5 });
+    const group = await schedule();
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [group.id] }, m);
+    await rejected(`/schedules/${group.id}/book`, 'POST', undefined, m);
+    const cls = await save('Class', { branchId: fixtures.branch.id, name: 'QA private', type: 'private', defaultMaxCapacity: 1, durationMinutes: 60 });
+    const good = await schedule({ classId: cls.id, roomId: fixtures.room2.id, maxCapacity: 1 });
+    const wrongDuration = await schedule({ classId: cls.id, roomId: fixtures.room2.id, maxCapacity: 1 });
+    await repo('ClassSchedule').update(wrongDuration.id, { endTime: new Date(new Date(wrongDuration.startTime).getTime() + 45 * 60000) });
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [wrongDuration.id] }, m);
+    const wrongCapacity = await schedule({ classId: cls.id, maxCapacity: 2 });
+    await rejected('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [wrongCapacity.id] }, m);
+    await api('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [good.id] }, m);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 4);
+  });
+  await test('PACKAGE-BOOK-CONCURRENT', 'Hai lần đặt đồng thời không dùng vượt số buổi còn lại', async () => {
+    const m = await newMember(); const mp = await assign(m.member, { remainingSessions: 1 }); const ss = [await schedule(), await schedule()];
+    const results = await Promise.all(ss.map(s => raw('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: [s.id] }, m)));
+    assert.deepEqual(results.map(r => r.status).sort(), [201, 400]);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id }), 1);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 0);
+  });
+  await test('PACKAGE-BOOK-DOUBLE-SUBMIT', 'Gửi lại cùng danh sách không trừ hai lần hay tạo deadlock', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const ss = [await schedule(), await schedule()];
+    const ids = ss.map(s => s.id);
+    const responses = await Promise.all([ids, [...ids].reverse()].map(scheduleIds => raw('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds }, m)));
+    assert.deepEqual(responses.map(r => r.status).sort(), [201, 409]);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 8);
+  });
+  await test('PACKAGE-BOOK-TIME-BASED', 'Gói theo thời gian vẫn đặt được nhiều lịch mà không trừ số buổi', async () => {
+    const m = await newMember(); const pkg = await save('Package', { name: 'QA theo thời gian', type: 'time_based', price: 1000, durationDays: 180 });
+    const mp = await assign(m.member, { packageId: pkg.id, remainingSessions: null }); const ss = [await schedule(), await schedule()];
+    await api('/bookings/package-schedules', 'POST', { memberPackageId: mp.id, scheduleIds: ss.map(s => s.id) }, m);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, null);
+    assert.equal(await repo('Booking').countBy({ memberId: m.member.id, sessionDeducted: false }), 2);
+  });
+  await test('SCOPE-REMOVED-ENDPOINTS', 'Các API của UC đã gỡ đều trả 404 cho mọi vai trò', async () => {
+    const id = fixtures.room.id;
+    const retired = [
+      ['/branches', 'GET'], ['/branches', 'POST'], [`/branches/${fixtures.branch.id}`, 'PATCH'],
+      [`/branches/${fixtures.branch.id}/rooms`, 'POST'], ['/rooms', 'GET'], ['/rooms', 'POST'],
+      [`/rooms/${id}`, 'PATCH'], [`/rooms/${id}`, 'DELETE'], [`/rooms/${id}/toggle`, 'PATCH'],
+      ['/equipment', 'GET'], ['/equipment', 'POST'], [`/equipment/${id}`, 'PATCH'], [`/equipment/${id}`, 'DELETE'],
+      ['/products', 'GET'], ['/products', 'POST'], [`/products/${id}`, 'PATCH'], [`/products/${id}/stock`, 'PATCH'], [`/products/${id}`, 'DELETE'],
+      ['/private-sessions', 'GET'], ['/private-sessions', 'POST'], ['/private-sessions/my', 'GET'],
+      [`/private-sessions/${id}/status`, 'PATCH'], [`/private-sessions/${id}/cancel`, 'PATCH'], ['/private-sessions/instructors', 'GET'],
+      [`/private-sessions/instructors/${fixtures.coach.user.id}/week`, 'GET'], ['/notifications', 'GET'], ['/notifications', 'POST'], ['/notifications/broadcast', 'POST'],
+      [`/notifications/${id}/read`, 'PATCH'], ['/notifications/read-all', 'PATCH'], ['/system/logs', 'GET'],
+    ];
+    for (const actor of ['admin', 'staff', 'coach', 'member']) {
+      for (const [url, method] of retired) await rejected(url, method, method === 'GET' ? undefined : {}, actor, [404]);
+    }
+  });
+  await test('SCOPE-SCHEDULE-ROOMS', 'Xếp lịch vẫn đọc được danh mục phòng đang hoạt động', async () => {
+    const inactive = await save('Room', { branchId: fixtures.branch.id, name: 'QA phòng ngừng dùng', capacity: 2, isActive: false });
+    const closedBranch = await save('Branch', { name: 'QA cơ sở ngừng dùng', address: 'QA', isActive: false });
+    const closedRoom = await save('Room', { branchId: closedBranch.id, name: 'QA phòng thuộc cơ sở ngừng dùng', capacity: 2 });
+    const rooms = await api('/classes/rooms');
+    assert.ok(rooms.some(r => r.id === fixtures.room.id)); assert.ok(!rooms.some(r => r.id === inactive.id));
+    assert.ok(!rooms.some(r => r.id === closedRoom.id));
+    assert.ok((await api('/classes/rooms', 'GET', undefined, 'member')).some(r => r.id === fixtures.room.id));
+    await rejected('/classes/rooms', 'GET', undefined, null, [401]);
+    for (const method of ['POST', 'PATCH', 'DELETE']) await rejected('/classes/rooms', method, {}, 'admin', [400, 404]);
+  });
   for (const [actor, role] of [['admin', 'admin'], ['staff', 'receptionist'], ['coach', 'instructor'], ['member', 'member']]) {
     await test(`UC1-LOGIN-${role}`, `Đăng nhập ${role} và đối chiếu /auth/me`, async () => {
       const me = await api('/auth/me', 'GET', undefined, actor, 200);
@@ -192,6 +435,36 @@ async function suite() {
   });
   await test('UC2-ROOM-CONFLICT', 'Chặn trùng phòng dù khác HLV', async () => {
     const b = scheduleBody(); await api('/schedules', 'POST', b); const r = await rejected('/schedules', 'POST', { ...b, instructorId: fixtures.coach2.user.id }); assert.match(JSON.stringify(r.body), /Phòng/);
+  });
+  await test('UC2-PARALLEL-COACHES-ROOMS', 'Hai HLV khác nhau, hai phòng khác nhau được tạo cùng ngày cùng giờ', async () => {
+    const body = scheduleBody();
+    const other = { ...body, instructorId: fixtures.coach2.user.id, roomId: fixtures.room2.id, maxCapacity: 1 };
+    const responses = await Promise.all([raw('/schedules', 'POST', body), raw('/schedules', 'POST', other)]);
+    responses.forEach(r => assert.equal(r.status, 201, JSON.stringify(r.body)));
+    const ids = responses.map(r => r.data.id);
+    const schedules = (await api('/schedules')).filter(s => ids.includes(s.id));
+    assert.equal(schedules.length, 2); assert.equal(schedules[0].startTime, schedules[1].startTime);
+    assert.equal(schedules[0].endTime, schedules[1].endTime);
+    assert.equal(new Set(schedules.map(s => s.instructorId)).size, 2);
+    assert.equal(new Set(schedules.map(s => s.roomId)).size, 2);
+  });
+  await test('UC2-EDIT-PARALLEL-ROOMS', 'Sửa lịch sang cùng giờ lớp khác được phép khi khác HLV và phòng', async () => {
+    const first = await schedule(); const second = await schedule({ instructorId: fixtures.coach2.user.id, roomId: fixtures.room2.id, maxCapacity: 1 });
+    await api(`/schedules/${second.id}`, 'PATCH', { startTime: first.startTime, endTime: first.endTime });
+    const updated = await api(`/schedules/${second.id}`);
+    assert.equal(updated.startTime, first.startTime); assert.equal(updated.endTime, first.endTime);
+    assert.equal(updated.instructorId, fixtures.coach2.user.id); assert.equal(updated.roomId, fixtures.room2.id);
+  });
+  await test('WEEKLY-PARALLEL-COACHES-ROOMS', 'Lịch hàng loạt cùng thứ, cùng giờ được tạo cho nhiều HLV ở các phòng khác nhau', async () => {
+    const first = recurringBody(210);
+    const second = { ...first, instructorId: fixtures.coach2.user.id, roomId: fixtures.room2.id, maxCapacity: 1 };
+    const created = await api('/schedules/recurring', 'POST', first);
+    const preview = await api('/schedules/recurring/preview', 'POST', second, 'admin', 200);
+    assert.equal(preview.conflictCount, 0); assert.equal(preview.totalCount, created.createdCount);
+    const parallel = await api('/schedules/recurring', 'POST', second);
+    assert.equal(parallel.createdCount, created.createdCount);
+    assert.deepEqual(parallel.schedules.map(s => s.startTime), created.schedules.map(s => s.startTime));
+    assert.ok(parallel.schedules.every(s => s.instructorId === second.instructorId && s.roomId === second.roomId));
   });
   await test('UC2-COACH-CONFLICT', 'Chặn trùng HLV dù khác phòng', async () => {
     const b = scheduleBody(); await api('/schedules', 'POST', b); const r = await rejected('/schedules', 'POST', { ...b, roomId: fixtures.room2.id, maxCapacity: 1 }); assert.match(JSON.stringify(r.body), /Huấn luyện viên/);
@@ -275,6 +548,60 @@ async function suite() {
   await test('UC2-QR-INVALID', 'QR không tồn tại trả 404', () => rejected('/check-ins/qr', 'POST', { qrData: 'QA-invalid' }, 'staff', [404]));
 
   await test('UC3-MY-SCHEDULES', 'HLV chỉ thấy lịch dạy của mình', async () => { const s = await schedule(); const d = await api('/teaching/my-schedules', 'GET', undefined, 'coach'); assert.ok(d.some(v => v.id === s.id)); assert.ok(d.every(v => v.instructorId === fixtures.coach.user.id)); });
+  await test('TEACHING-DATE-ROSTER', 'Lịch dạy đọc đúng ngày Việt Nam, HLV, phòng, học viên và sĩ số thực', async () => {
+    const m = await newMember({ fullName: 'QA học viên giảng dạy' }); await assign(m.member); const s = await schedule();
+    const booking = await api('/bookings', 'POST', { memberId: m.member.id, scheduleId: s.id }, m);
+    const day = new Date(Date.parse(s.startTime) + 7 * 3600000).toISOString().slice(0, 10);
+    const rows = await api(`/teaching/schedules?date=${day}`, 'GET', undefined, 'coach');
+    const found = rows.find(v => v.id === s.id); assert.ok(found); assert.equal(found.currentEnrolled, 1);
+    assert.equal(found.students[0].bookingId, booking.id); assert.equal(found.students[0].memberId, m.member.id);
+    assert.equal(found.students[0].fullName, 'QA học viên giảng dạy'); assert.equal(found.attendedCount, 0);
+    assert.equal(found.roomName, fixtures.room.name); assert.ok(!JSON.stringify(rows).includes('passwordHash'));
+    const empty = await api('/teaching/schedules?date=2000-01-01'); assert.deepEqual(empty, []);
+    await rejected('/teaching/schedules?date=invalid', 'GET', undefined);
+    await rejected('/teaching/schedules', 'GET', undefined, 'member', [403]);
+    await rejected(`/teaching/schedules?instructorId=${fixtures.coach.user.id}`, 'GET', undefined, 'coach2', [403]);
+  });
+  await test('TEACHING-ATTENDANCE', 'HLV điểm danh ca của mình, lưu check-in và không trừ lại buổi đã đặt', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const b = await api('/bookings', 'POST', { memberId: m.member.id, scheduleId: s.id }, m);
+    const body = { memberId: m.member.id, bookingId: b.id };
+    await rejected(`/teaching/schedules/${s.id}/check-in`, 'POST', body, 'coach2', [403]);
+    assert.equal(await repo('CheckIn').countBy({ bookingId: b.id }), 0);
+    await api(`/teaching/schedules/${s.id}/check-in`, 'POST', body, 'coach');
+    const persistedCheckIn = await repo('CheckIn').findOneBy({ bookingId: b.id });
+    assert.ok(Math.abs(new Date(persistedCheckIn.checkInTime).getTime() - Date.now()) < 5000, 'Thời điểm điểm danh phải đúng thời gian thực');
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 9);
+    assert.equal((await repo('Booking').findOneBy({ id: b.id })).status, 'attended');
+    assert.equal((await repo('Member').findOneBy({ id: m.member.id })).totalSessionsAttended, 1);
+    await rejected(`/teaching/schedules/${s.id}/check-in`, 'POST', body, 'coach', [409]);
+    const rows = await api('/teaching/schedules', 'GET', undefined, 'coach');
+    assert.equal(rows.find(v => v.id === s.id).attendedCount, 1); assert.ok(rows.find(v => v.id === s.id).students[0].checkInTime);
+    const students = await api('/teaching/students', 'GET', undefined, 'coach');
+    assert.equal(students.find(v => v.id === m.member.id).totalSessionsAttended, 1);
+  });
+  await test('TEACHING-PLANS-PERSIST', 'Giáo án, điểm thể lực, ghi nhận và phản hồi được đọc lại sau khi sửa', async () => {
+    const m = await newMember(); await assign(m.member); const s = await schedule(); await api(`/schedules/${s.id}/book`, 'POST', undefined, m);
+    const p = await api('/teaching/workout-plans', 'POST', { memberId: m.member.id, scheduleId: s.id, title: 'Giáo án thực', exercises: 'Footwork\nPelvic Curl', coreScore: 8.5, flexibilityScore: 7, progressNotes: 'Tư thế tốt', feedback: 'Tập thở mỗi ngày' }, 'coach');
+    assert.equal(p.coreScore, 8.5); assert.equal(p.memberName, m.user.fullName); assert.equal(p.className, fixtures.cls.name);
+    assert.ok(Math.abs(Date.parse(p.createdAt) - Date.now()) < 5000, 'Ngày tạo giáo án phải đúng thời gian thực');
+    await api(`/teaching/workout-plans/${p.id}`, 'PATCH', { exercises: 'Footwork 12 lần', coreScore: 9, flexibilityScore: null }, 'coach');
+    const list = await api(`/teaching/workout-plans?memberId=${m.member.id}`, 'GET', undefined, 'coach');
+    assert.equal(list[0].coreScore, 9); assert.equal(list[0].flexibilityScore, null); assert.equal(list[0].exercises, 'Footwork 12 lần');
+    assert.ok(Math.abs(Date.parse(list[0].updatedAt) - Date.now()) < 5000, 'Ngày cập nhật giáo án phải đúng thời gian thực');
+    const students = await api('/teaching/students', 'GET', undefined, 'coach');
+    assert.equal(students.find(v => v.id === m.member.id).lastProgress.coreScore, 9);
+    assert.equal(students.find(v => v.id === m.member.id).lastFeedback.feedback, 'Tập thở mỗi ngày');
+    const mine = await api(`/teaching/students/${m.member.id}/progress`, 'GET', undefined, m);
+    assert.equal(mine[0].id, p.id); assert.ok(!JSON.stringify(mine).includes('passwordHash'));
+    await rejected(`/teaching/students/${m.member.id}/progress`, 'GET', undefined, 'member2', [403]);
+    await rejected(`/teaching/workout-plans/${p.id}`, 'PATCH', { feedback: 'Sửa trái phép' }, 'coach2', [403]);
+    const otherList = await api('/teaching/workout-plans', 'GET', undefined, 'coach2'); assert.ok(!otherList.some(v => v.id === p.id));
+    for (const score of [-1, 11, 7.55]) await rejected(`/teaching/workout-plans/${p.id}`, 'PATCH', { coreScore: score }, 'coach');
+    for (const field of ['memberId', 'instructorId', 'title']) await rejected(`/teaching/workout-plans/${p.id}`, 'PATCH', { [field]: null }, 'coach');
+    await rejected('/teaching/workout-plans', 'POST', { memberId: m.member.id, title: 'Sai ca', scheduleId: randomUUID() }, 'coach', [404]);
+    const outsider = await newMember(); await rejected('/teaching/workout-plans', 'POST', { memberId: outsider.member.id, title: 'Chưa được phân công' }, 'coach', [403]);
+  });
   await test('UC3-STATUS', 'HLV bắt đầu/kết thúc ca và trạng thái được lưu', async () => { const s = await schedule(); await api(`/schedules/${s.id}`, 'PATCH', { status: 'in_progress' }, 'coach'); assert.equal((await api(`/schedules/${s.id}`)).status, 'in_progress'); await api(`/schedules/${s.id}`, 'PATCH', { status: 'completed' }, 'coach'); assert.equal((await api(`/schedules/${s.id}`)).status, 'completed'); });
   await test('UC3-STATUS-INVALID', 'Chặn trạng thái ca không hợp lệ, không lỗi 500', async () => { const s = await schedule(); await rejected(`/schedules/${s.id}`, 'PATCH', { status: 'garbage' }, 'coach'); });
   await test('UC3-OTHER-COACH', 'HLV không được sửa ca của HLV khác', async () => { const s = await schedule(); await rejected(`/schedules/${s.id}`, 'PATCH', { status: 'completed' }, 'coach2', [403]); });
@@ -283,26 +610,112 @@ async function suite() {
     await api(`/teaching/workout-plans/${p.id}/progress`, 'PATCH', { progressNotes: 'QA tiến bộ', feedback: 'QA phản hồi' }, 'coach'); const d = await api(`/teaching/students/${fixtures.member.member.id}/progress`, 'GET', undefined, 'member');
     const found = d.find(v => v.id === p.id); assert.ok(found); assert.equal(found.progressNotes, 'QA tiến bộ'); assert.equal(found.feedback, 'QA phản hồi');
   });
-  await test('UC3-FEEDBACK-NOTIFICATION', 'Phản hồi HLV xuất hiện đúng trên thông báo học viên', async () => {
-    const title = `QA phản hồi ${randomUUID()}`; await api('/notifications', 'POST', { userId: fixtures.member.user.id, title, message: 'QA feedback' }, 'coach');
-    assert.ok((await api('/notifications?limit=100', 'GET', undefined, 'member')).some(v => v.title === title)); assert.ok(!(await api('/notifications?limit=100', 'GET', undefined, 'member2')).some(v => v.title === title));
+  await test('UC3-FEEDBACK-RECORD', 'Phản hồi HLV được lưu và đọc qua hồ sơ tiến độ', async () => {
+    const feedback = `QA phản hồi ${randomUUID()}`;
+    const plan = await api('/teaching/workout-plans', 'POST', { memberId: fixtures.member.member.id, title: 'Đánh giá buổi tập', feedback, progressNotes: 'Điểm cơ trọng tâm: 8/10; độ dẻo dai: 7/10' }, 'coach');
+    const progress = await api(`/teaching/students/${fixtures.member.member.id}/progress`, 'GET', undefined, 'member');
+    const saved = progress.find(p => p.id === plan.id); assert.equal(saved.feedback, feedback); assert.equal(saved.instructorId, fixtures.coach.user.id);
   });
-  await test('UC3-PRIVATE-WEEK', 'Lịch tuần HLV có đủ 7 ngày và slot không trùng lớp', async () => {
+  await test('UC3-INSTRUCTOR-WEEK', 'Lịch tuần HLV có đủ 7 ngày và danh sách lớp, không còn khung giờ đề nghị', async () => {
     const s = await schedule(); const day = new Date(new Date(s.startTime).getTime() + 7 * 3600000).toISOString().slice(0, 10);
-    const w = await api(`/private-sessions/instructors/${fixtures.coach.user.id}/week?weekStart=${day}`, 'GET', undefined, 'member'); assert.equal(w.days.length, 7); assert.ok(w.days[0].classes.some(v => v.id === s.id));
-    assert.ok(w.days[0].freeSlots.every(v => !(new Date(v.startTime) < new Date(s.endTime) && new Date(s.startTime) < new Date(v.endTime))));
+    const w = await api(`/instructors/${fixtures.coach.user.id}/week?weekStart=${day}`, 'GET', undefined, 'member'); assert.equal(w.days.length, 7); assert.ok(w.days[0].classes.some(v => v.id === s.id));
+    assert.ok(!('freeSlots' in w.days[0]));
   });
-  await test('UC3-PRIVATE-APPROVE', 'Đề nghị tập riêng -> duyệt -> chặn lớp trùng HLV', async () => {
-    const b = scheduleBody(); const r = await api('/private-sessions', 'POST', { instructorUserId: b.instructorId, startTime: b.startTime, endTime: b.endTime }, 'member'); assert.equal(r.status, 'pending');
-    const approved = await api(`/private-sessions/${r.id}/status`, 'PATCH', { status: 'approved' }, 'coach'); assert.equal(approved.status, 'approved'); await rejected('/schedules', 'POST', b);
+  await test('PACKAGE-PRIVATE-CONFIG', 'Hình thức tập riêng được tạo, sửa và đọc lại theo từng gói', async () => {
+    const p = await api('/packages', 'POST', { name: 'QA riêng 45 phút', type: 'session_based', price: 1500000, totalSessions: 5, privateSessionEnabled: true, privateSessionType: 'semi_private_1v2', privateSessionDurationMinutes: 45 });
+    assert.equal(p.privateSessionType, 'semi_private_1v2'); assert.equal(p.privateSessionDurationMinutes, 45);
+    await api(`/packages/${p.id}`, 'PATCH', { privateSessionType: 'small_group_1v3', privateSessionDurationMinutes: 90 });
+    const updated = await api(`/packages/${p.id}`); assert.equal(updated.privateSessionEnabled, true); assert.equal(updated.privateSessionType, 'small_group_1v3'); assert.equal(updated.privateSessionDurationMinutes, 90);
   });
-  await test('UC3-PRIVATE-CANCEL-OWNER', 'Học viên khác không được hủy đề nghị tập riêng', async () => { const b = scheduleBody(); const r = await api('/private-sessions', 'POST', { instructorUserId: b.instructorId, startTime: b.startTime, endTime: b.endTime }, 'member'); await rejected(`/private-sessions/${r.id}/cancel`, 'PATCH', {}, 'member2', [403]); await api(`/private-sessions/${r.id}/cancel`, 'PATCH', {}, 'member'); });
-  await test('UC3-PRIVATE-HOURS', 'Chặn đề nghị tập riêng ngoài giờ hoạt động 07-21', async () => { const b = scheduleBody(); const day = b.startTime.slice(0, 10); await rejected('/private-sessions', 'POST', { instructorUserId: b.instructorId, startTime: `${day}T23:00:00+07:00`, endTime: `${day}T23:30:00+07:00` }, 'member'); });
-
+  await test('PACKAGE-PRIVATE-VALIDATION', 'Chặn thời lượng và hình thức tập riêng sai khi tạo hoặc sửa gói', async () => {
+    for (const value of [0, 14, 181, 30.5]) {
+      await rejected('/packages', 'POST', { name: 'QA invalid', type: 'session_based', price: 1000, privateSessionDurationMinutes: value });
+      await rejected(`/packages/${fixtures.privatePkg.id}`, 'PATCH', { privateSessionDurationMinutes: value });
+    }
+    for (const body of [{ privateSessionType: 'invalid' }, { privateSessionType: null }, { privateSessionEnabled: null }, { privateSessionDurationMinutes: null }]) await rejected(`/packages/${fixtures.privatePkg.id}`, 'PATCH', body);
+    assert.equal((await api(`/packages/${fixtures.privatePkg.id}`)).privateSessionDurationMinutes, 60);
+  });
+  await test('PACKAGE-PRIVATE-ROLE', 'Học viên không được sửa cấu hình tập riêng', () => rejected(`/packages/${fixtures.privatePkg.id}`, 'PATCH', { privateSessionEnabled: false }, 'member', [403]));
+  await test('PACKAGE-TRAINING-MODES', 'Tạo đủ bốn hình thức tập riêng, đổi sang tập lớp và đọc đúng trên gói hội viên', async () => {
+    let last;
+    for (const mode of ['private_1v1', 'semi_private_1v2', 'small_group_1v3', 'small_group_1v4']) {
+      const p = await api('/packages', 'POST', { name: `QA ${mode}`, type: 'session_based', price: 1000000, totalSessions: 5, durationDays: 30, privateSessionEnabled: true, privateSessionType: mode, privateSessionDurationMinutes: 45 });
+      assert.equal(p.privateSessionType, mode);
+      await api(`/packages/${p.id}`, 'PATCH', { privateSessionEnabled: false });
+      assert.equal((await api(`/packages/${p.id}`)).privateSessionEnabled, false);
+      last = p;
+    }
+    await api(`/packages/${last.id}`, 'PATCH', { privateSessionEnabled: true });
+    const m = await newMember(); const assigned = await api('/packages/assign', 'POST', { memberId: m.member.id, packageId: last.id });
+    const my = (await api('/members/me/packages', 'GET', undefined, m)).find(v => v.id === assigned.id);
+    assert.equal(my.package.privateSessionEnabled, true); assert.equal(my.package.privateSessionType, 'small_group_1v4'); assert.equal(my.package.privateSessionDurationMinutes, 45);
+  });
+  await test('ARCHIVED-REQUEST-NO-BLOCK', 'Dữ liệu đề nghị cũ không còn chặn tạo, sửa lịch hoặc đặt lớp', async () => {
+    const m = await newMember(); await assign(m.member); const b = scheduleBody();
+    await save('PrivateSessionRequest', { memberUserId: m.user.id, instructorUserId: b.instructorId, startTime: new Date(b.startTime), endTime: new Date(new Date(b.startTime).getTime() + 3 * 3600000), sessionType: 'private_1v1', status: 'approved' });
+    const s = await api('/schedules', 'POST', b);
+    await api(`/schedules/${s.id}`, 'PATCH', { startTime: b.endTime, endTime: new Date(new Date(b.endTime).getTime() + 3600000).toISOString() });
+    assert.ok((await api(`/schedules/${s.id}/book`, 'POST', undefined, m)).bookingId);
+  });
   await test('UC4-MEMBER-CRUD', 'Thêm/sửa/khóa học viên và kiểm tra đăng nhập bị chặn', async () => {
     const m = await api('/members', 'POST', { fullName: 'QA CRUD hội viên', email: `crud-${randomUUID()}@qa.invalid`, phone: '0909999999' }, 'staff'); assert.ok(m.id);
     await api(`/members/${m.id}`, 'PATCH', { fullName: 'QA CRUD đã sửa' }, 'staff'); assert.equal((await api(`/members/${m.id}`)).user.fullName, 'QA CRUD đã sửa');
     await api(`/members/${m.id}`, 'DELETE'); await rejected('/auth/login', 'POST', { email: m.user.email, password: 'Member@123' }, null, [401]);
+  });
+  await test('MEMBER-EDIT-PERSISTENCE', 'Sửa đầy đủ hồ sơ, đồng bộ danh sách và học viên, giữ nguyên gói/lịch/mật khẩu', async () => {
+    const m = await newMember(); const mp = await assign(m.member); const s = await schedule();
+    const booking = await api(`/schedules/${s.id}/book`, 'POST', undefined, m);
+    const email = `edited-${randomUUID()}@qa.invalid`;
+    const values = { fullName: 'Học viên đã chỉnh sửa', email, phone: '0901234567', dateOfBirth: '1992-07-08', gender: 'female', address: 'Địa chỉ kiểm thử', emergencyContactName: 'Liên hệ kiểm thử', emergencyContactPhone: '0912345678', healthNotes: 'Ghi chú kiểm thử', goals: 'Mục tiêu kiểm thử' };
+    const edited = await api(`/members/${m.member.id}`, 'PATCH', values, 'staff');
+    assert.equal(edited.id, m.member.id); assert.equal(edited.userId, m.user.id);
+    assert.equal(edited.user.fullName, values.fullName); assert.equal(edited.user.email, email);
+    for (const key of ['dateOfBirth', 'gender', 'address', 'emergencyContactName', 'emergencyContactPhone', 'healthNotes', 'goals']) assert.equal(edited[key], values[key]);
+    const own = await api('/members/me', 'GET', undefined, m); assert.equal(own.address, values.address); assert.equal(own.user.fullName, values.fullName);
+    const list = await api(`/members?search=${encodeURIComponent(email)}`); assert.equal(list.total, 1); assert.equal(list.items[0].name, values.fullName); assert.equal(list.items[0].address, values.address);
+    assert.equal((await repo('User').findOneBy({ id: m.user.id })).passwordHash, m.entity.passwordHash);
+    assert.equal((await repo('Booking').findOneBy({ id: booking.bookingId })).memberId, m.member.id);
+    assert.equal((await repo('MemberPackage').findOneBy({ id: mp.id })).remainingSessions, 9);
+    assert.ok((await login(email, 'Member@123')).token); assert.ok(!('passwordHash' in edited.user));
+  });
+  await test('MEMBER-EDIT-CLEAR', 'Xóa ngày sinh, giới tính và các thông tin tùy chọn thật sự được lưu', async () => {
+    const m = await newMember(); const url = `/members/${m.member.id}`;
+    await api(url, 'PATCH', { dateOfBirth: '1990-02-03', gender: 'male', address: 'Cũ', emergencyContactName: 'Cũ', emergencyContactPhone: '0900000000', healthNotes: 'Cũ', goals: 'Cũ' });
+    await api(url, 'PATCH', { dateOfBirth: null, gender: null, address: '', emergencyContactName: '', emergencyContactPhone: '', healthNotes: '', goals: '' });
+    const result = await api(url);
+    assert.equal(result.dateOfBirth, null); assert.equal(result.gender, null);
+    for (const key of ['address', 'emergencyContactName', 'emergencyContactPhone', 'healthNotes', 'goals']) assert.equal(result[key], '');
+    assert.equal(result.user.fullName, m.user.fullName); assert.equal(result.user.email, m.user.email);
+    assert.equal((await api(url, 'PATCH', {})).id, m.member.id);
+  });
+  await test('MEMBER-EDIT-EMAIL-CONFLICT', 'Email trùng không phân biệt hoa thường trả 409 và không sửa dở hồ sơ', async () => {
+    const m = await newMember(); const other = await newMember();
+    await repo('Member').update(m.member.id, { address: 'Giữ nguyên địa chỉ' });
+    await rejected(`/members/${m.member.id}`, 'PATCH', { fullName: 'Không được ghi', email: other.user.email.toUpperCase(), address: 'Không được ghi' }, 'staff', [409]);
+    const result = await api(`/members/${m.member.id}`);
+    assert.equal(result.user.fullName, m.user.fullName); assert.equal(result.user.email, m.user.email); assert.equal(result.address, 'Giữ nguyên địa chỉ');
+  });
+  await test('MEMBER-EDIT-VALIDATION', 'Chặn tên/email rỗng, ngày hoặc giới tính sai và trường ngoài quyền chỉnh sửa', async () => {
+    const m = await newMember();
+    for (const invalid of [{ fullName: null }, { fullName: '   ' }, { email: null }, { email: '' }, { email: 'invalid' }, { dateOfBirth: '2024-02-31' }, { gender: 'unknown' }, { role: 'admin' }, { remainingSessions: 999 }]) {
+      await rejected(`/members/${m.member.id}`, 'PATCH', invalid, 'admin', [400]);
+    }
+    assert.equal((await repo('User').findOneBy({ id: m.user.id })).fullName, m.user.fullName);
+  });
+  await test('MEMBER-EDIT-PERMISSIONS', 'Admin/lễ tân được sửa, HLV/học viên không sửa hồ sơ người khác, tự sửa xóa được', async () => {
+    const m = await newMember(); const url = `/members/${m.member.id}`;
+    for (const actor of ['coach', 'member2']) await rejected(url, 'PATCH', { fullName: 'Không được ghi' }, actor, [403]);
+    await rejected(url, 'PATCH', { fullName: 'Không được ghi' }, null, [401]);
+    await api('/members/me', 'PATCH', { address: 'Học viên tự cập nhật', healthNotes: 'Ghi chú mới' }, m);
+    await api('/members/me', 'PATCH', { healthNotes: '', address: '' }, m);
+    const result = await api(url); assert.equal(result.healthNotes, ''); assert.equal(result.address, '');
+    await api(url, 'PATCH', { goals: 'Admin cập nhật' });
+    assert.equal((await api(url)).goals, 'Admin cập nhật');
+  });
+  await test('MEMBER-CREATE-OPTIONAL-PROFILE', 'Thêm học viên lưu địa chỉ và mục tiêu, cho phép chưa cung cấp ngày sinh/giới tính', async () => {
+    const m = await api('/members', 'POST', { fullName: 'QA hồ sơ mới', email: `create-${randomUUID()}@qa.invalid`, phone: '0901234567', dateOfBirth: null, gender: null, address: 'Địa chỉ mới', goals: 'Mục tiêu mới' }, 'staff');
+    assert.equal(m.address, 'Địa chỉ mới'); assert.equal(m.goals, 'Mục tiêu mới'); assert.equal(m.dateOfBirth, null); assert.equal(m.gender, null);
+    assert.equal((await api(`/members/${m.id}`)).address, 'Địa chỉ mới');
   });
   for (const status of ['active', 'inactive', 'expired']) await test(`UC4-FILTER-${status}`, `Lọc học viên trạng thái ${status} có dữ liệu đúng`, async () => {
     const m = await newMember(); if (status === 'inactive') await repo('User').update(m.user.id, { isActive: false }); else await assign(m.member, status === 'expired' ? { status: 'expired', expiryDate: new Date(Date.now() - 86400000) } : {});
@@ -339,19 +752,6 @@ async function suite() {
     const tx = await repo('Transaction').findOne({ where: { memberId: m.member.id }, order: { createdAt: 'DESC' } }); assert.equal(Number(tx.finalAmount), 1000000, 'Server phải tính giá từ gói và voucher hợp lệ');
   });
 
-  await test('UC5-ROOM-CRUD', 'Phòng 1:1 và nhóm 2-4 lưu sức chứa, tìm kiếm, bật/tắt', async () => {
-    for (const [capacity, roomType] of [[1, 'private_1v1'], [2, 'semi_private_1v2'], [3, 'small_group_1v3'], [4, 'small_group_1v4']]) {
-      const p = await api('/rooms', 'POST', { name: `QA cấu hình ${capacity}`, capacity, roomType }); assert.equal(p.capacity, capacity);
-      const d = await api(`/rooms?roomType=${roomType}&search=${encodeURIComponent(p.name)}`); assert.ok(d.some(v => v.id === p.id)); assert.ok(d.every(v => v.roomType === roomType));
-      const off = await api(`/rooms/${p.id}/toggle`, 'PATCH', {}); assert.equal(off.isActive, false); await api(`/rooms/${p.id}`, 'DELETE'); await rejected(`/rooms/${p.id}`, 'GET', undefined, 'admin', [404]);
-    }
-  });
-  await test('UC5-ROOM-NEGATIVE', 'Chặn sức chứa phòng âm', () => rejected('/rooms', 'POST', { name: 'QA invalid', roomType: 'private_1v1', capacity: -1 }));
-  await test('UC5-PRODUCT-CRUD', 'Thêm/sửa sản phẩm và cập nhật tồn kho', async () => {
-    const p = await api('/products', 'POST', { name: 'QA thảm', category: 'accessory', price: 100000, stockQuantity: 10 }); await api(`/products/${p.id}`, 'PATCH', { name: 'QA thảm sửa' }); assert.equal((await api(`/products/${p.id}`)).name, 'QA thảm sửa');
-    await api(`/products/${p.id}/stock`, 'PATCH', { change: -3 }); assert.equal((await api(`/products/${p.id}`)).stockQuantity, 7);
-  });
-  await test('UC5-PRODUCT-NEGATIVE', 'Chặn giá sản phẩm âm', () => rejected('/products', 'POST', { name: 'QA invalid', category: 'accessory', price: -1 }));
   await test('UC5-PROMO', 'Khuyến mãi tính đúng giá và chặn mã trùng', async () => {
     const code = `QA${randomUUID().slice(0, 8)}`; await api('/promotions', 'POST', { code, name: 'QA giảm 10%', discountPercent: 10, minOrderAmount: 100000 });
     const d = await api('/promotions/apply', 'POST', { code: code.toLowerCase(), orderAmount: 1000000 }, null); assert.equal(d.discountAmount, 100000); assert.equal(d.finalAmount, 900000);
@@ -359,11 +759,6 @@ async function suite() {
   });
   await test('UC5-PROMO-EXPIRED', 'Không áp dụng voucher hết hạn', async () => {
     const p = await api('/promotions', 'POST', { code: `QA${randomUUID().slice(0, 8)}`, name: 'QA hết hạn', discountPercent: 10, endDate: '2020-01-01' }); await rejected('/promotions/apply', 'POST', { code: p.code, orderAmount: 1000000 }, null);
-  });
-  await test('UC5-MAINTENANCE', 'Lên lịch bảo trì, broadcast tới đúng học viên và đánh dấu đã đọc', async () => {
-    const e = await api('/equipment', 'POST', { name: 'QA Reformer', type: 'Reformer', serialNumber: `QA-${randomUUID()}` }); await api(`/equipment/${e.id}`, 'PATCH', { status: 'maintenance', nextMaintenanceDate: '2027-01-01' }); assert.equal((await api(`/equipment/${e.id}`)).status, 'maintenance');
-    const title = `QA bảo trì ${randomUUID()}`; const b = await api('/notifications/broadcast', 'POST', { title, message: 'QA maintenance', equipmentName: 'QA Reformer' }); assert.ok(b.count > 0);
-    for (const actor of ['member', 'member2']) { const n = (await api('/notifications?limit=100', 'GET', undefined, actor)).find(v => v.title === title || v.title.includes(title)); assert.ok(n, `${actor} không nhận được thông báo`); await api(`/notifications/${n.id}/read`, 'PATCH', {}, actor); assert.equal((await repo('Notification').findOneBy({ id: n.id })).isRead, true); }
   });
 
   await test('UC6-DASHBOARD', 'Dashboard trả KPI dạng số hữu hạn', async () => { const d = await api('/reports/dashboard'); assert.ok(d && typeof d === 'object'); assert.ok(Object.keys(d).length > 0); for (const [key, value] of Object.entries(d)) if (typeof value === 'number') assert.ok(Number.isFinite(value), key); });
@@ -380,8 +775,8 @@ async function suite() {
     await rejected('/auth/login', 'POST', { email: u.email, password: 'User@12345' }, null, [401]); await api(`/users/${u.id}`, 'PATCH', { isActive: true, role: 'instructor' }); assert.equal((await login(u.email, 'User@12345')).user.role, 'instructor');
   });
   for (const actor of ['member', 'coach', 'staff']) await test(`UC7-USERS-DENIED-${actor}`, `${actor} không được xem danh sách người dùng`, () => rejected('/users', 'GET', undefined, actor, [403]));
-  await test('UC7-MEMBER-WRITE-DENIED', 'Hội viên không được tạo lớp/phòng/gói hoặc broadcast', async () => {
-    for (const url of ['/classes', '/rooms', '/packages', '/notifications/broadcast']) await rejected(url, 'POST', {}, 'member', [403]);
+  await test('UC7-MEMBER-WRITE-DENIED', 'Hội viên không được tạo lớp hoặc gói', async () => {
+    for (const url of ['/classes', '/packages']) await rejected(url, 'POST', {}, 'member', [403]);
   });
   await test('UC7-BOOKING-OWNER', 'Hội viên không được hủy booking của người khác', async () => {
     const s = await schedule(); const b = await api('/bookings', 'POST', { memberId: fixtures.member2.member.id, scheduleId: s.id }, 'staff'); await rejected(`/bookings/${b.id}/cancel`, 'PATCH', { reason: 'QA unauthorized' }, 'member', [403, 404]);
@@ -397,7 +792,6 @@ async function suite() {
   await test('UC7-CONFIG-PERSIST', 'Cấu hình hệ thống lưu được và đọc lại đúng', async () => {
     await api('/system/config', 'PATCH', { studioName: 'QA tên mới', cancelHoursLimit: 4 }); const d = await api('/system/config'); assert.equal(d.studioName, 'QA tên mới'); assert.equal(d.cancelHoursLimit, 4);
   });
-  await test('UC7-LOGS', 'Nhật ký chứa sự kiện cập nhật cấu hình', async () => { const d = await api('/system/logs?limit=100'); assert.ok(d.items.some(v => v.action === 'CONFIG_UPDATE')); });
   await test('UC7-BACKUP-ARTIFACT', 'Backup trả bản sao lưu có tệp thực tế', async () => {
     const d = await api('/system/backup', 'POST', {}); assert.equal(d.status, 'completed'); const file = d.path || d.filePath || path.join(root, 'backend/backups', d.filename || 'missing'); assert.ok(fs.existsSync(file), 'API báo completed nhưng không có tệp backup thực tế');
   });
@@ -499,23 +893,75 @@ async function main() {
   const { TransformInterceptor } = require(path.join(root, 'backend/dist/common/interceptors/transform.interceptor'));
   const { HttpExceptionFilter } = require(path.join(root, 'backend/dist/common/filters/http-exception.filter'));
   app.useGlobalInterceptors(new TransformInterceptor()); app.useGlobalFilters(new HttpExceptionFilter());
-  await app.listen(0, '127.0.0.1'); db = app.get(DataSource); base = `http://127.0.0.1:${app.getHttpServer().address().port}/api/v1`;
+  if (process.argv.includes('--serve')) app.enableCors({ origin: [
+    'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:8081',
+    'http://localhost:5174', 'http://127.0.0.1:5174', 'http://localhost:8082', 'http://127.0.0.1:8082',
+  ], credentials: true });
+  await app.listen(Number(process.env.QA_HTTP_PORT || 0), '127.0.0.1'); db = app.get(DataSource); base = `http://127.0.0.1:${app.getHttpServer().address().port}/api/v1`;
   console.log(`QA on real PostgreSQL ${conn.host}:${conn.port}; temporary database ${database}`);
   await initializeFixtures();
   if (process.argv.includes('--serve')) {
-    app.enableCors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:8081'], credentials: true });
-    await schedule();
-    fs.writeFileSync(path.join(reportDir, 'ui-server.json'), JSON.stringify({ base, stopFile: path.join(reportDir, 'stop-ui') }));
+    let uiContext = {};
+    if (process.argv.includes('--simple-booking')) {
+      await api('/packages/starter-catalog', 'POST', {});
+      const catalog = (await repo('Package').find()).filter(p => p.catalogCode);
+      const prices = { trial_2: 200000, group_8: 1600000, group_10: 1900000, private_4: 2400000, duo_4: 1400000 };
+      for (const p of catalog) await api(`/packages/${p.id}`, 'PATCH', { price: prices[p.catalogCode], isActive: true });
+      await repo('MemberPackage').delete({ memberId: fixtures.member.member.id });
+      const group = await assign(fixtures.member.member, { packageId: catalog.find(p => p.catalogCode === 'group_8').id, remainingSessions: 8 });
+      const personal = await assign(fixtures.member.member, { packageId: catalog.find(p => p.catalogCode === 'private_4').id, remainingSessions: 4 });
+      const duo = await assign(fixtures.member.member, { packageId: catalog.find(p => p.catalogCode === 'duo_4').id, remainingSessions: 4 });
+      const partner = await assign(fixtures.member2.member, { packageId: duo.packageId, remainingSessions: 4 });
+      await api(`/packages/member-packages/${duo.id}/settings`, 'PATCH', { duoPartnerPackageId: partner.id });
+      const oneClass = await save('Class', { name: 'Pilates riêng 1:1', type: 'private', branchId: fixtures.branch.id, durationMinutes: 60, defaultMaxCapacity: 1 });
+      const duoClass = await save('Class', { name: 'Pilates đôi 1:2', type: 'semi_private', branchId: fixtures.branch.id, durationMinutes: 60, defaultMaxCapacity: 2 });
+      const extraRoom = await save('Room', { name: 'Phòng lớp chung B', branchId: fixtures.branch.id, capacity: 4, roomType: 'group' });
+      for (const offset of [1, 8, 15, 22, 29]) {
+        const day = new Date(Date.now() + offset * 86400000 + 7 * 3600000).toISOString().slice(0, 10);
+        await schedule({ startTime: `${day}T09:00:00+07:00`, endTime: `${day}T10:00:00+07:00` });
+        await schedule({ roomId: extraRoom.id, instructorId: fixtures.coach2.user.id, startTime: `${day}T09:00:00+07:00`, endTime: `${day}T10:00:00+07:00` });
+        const own = await schedule({ classId: oneClass.id, roomId: fixtures.room2.id, maxCapacity: 1, startTime: `${day}T18:00:00+07:00`, endTime: `${day}T19:00:00+07:00` });
+        await schedule({ classId: duoClass.id, maxCapacity: 2, startTime: `${day}T19:00:00+07:00`, endTime: `${day}T20:00:00+07:00` });
+        if (offset === 1) { await api('/bookings/package-schedules', 'POST', { memberPackageId: personal.id, scheduleIds: [own.id] }, 'member'); uiContext = { groupPackageId: group.id, privatePackageId: personal.id, duoPackageId: duo.id, firstDay: day }; }
+      }
+    } else if (process.argv.includes('--package-booking') || process.argv.includes('--package-flow')) {
+      await repo('Package').update(fixtures.pkg.id, { name: 'Gói Pilates 5 buổi', totalSessions: 5 });
+      await repo('MemberPackage').update({ memberId: fixtures.member.member.id }, { remainingSessions: 5 });
+      for (const dayOffset of [1, 2, 3, 4, 5, 6, 9]) {
+        const day = new Date(Date.now() + dayOffset * 86400000 + 7 * 3600000).toISOString().slice(0, 10);
+        await schedule({ startTime: `${day}T09:00:00+07:00`, endTime: `${day}T10:00:00+07:00` });
+      }
+      if (process.argv.includes('--package-flow')) {
+        const duoPkg = await save('Package', { name: 'Gói tập đôi 1:2 · 5 buổi', type: 'session_based', totalSessions: 5, price: 2000000, durationDays: 90, privateSessionEnabled: true, privateSessionType: 'semi_private_1v2', privateSessionDurationMinutes: 60 });
+        const duoClass = await save('Class', { name: 'Pilates tập đôi 1:2', branchId: fixtures.branch.id, type: 'semi_private', durationMinutes: 60, defaultMaxCapacity: 2 });
+        await assign(fixtures.member.member, { packageId: duoPkg.id, remainingSessions: 5 });
+        await assign(fixtures.member2.member, { packageId: duoPkg.id, remainingSessions: 5 });
+        await assign(fixtures.member.member, { packageId: fixtures.privatePkg.id, remainingSessions: 5 });
+        const privateClass = await save('Class', { name: 'Pilates cá nhân 1:1', branchId: fixtures.branch.id, type: 'private', durationMinutes: 60, defaultMaxCapacity: 1 });
+        for (const offset of [1, 8, 15, 22, 29]) {
+          const day = new Date(Date.now() + offset * 86400000 + 7 * 3600000).toISOString().slice(0, 10);
+          await schedule({ classId: privateClass.id, roomId: fixtures.room2.id, maxCapacity: 1, startTime: `${day}T18:00:00+07:00`, endTime: `${day}T19:00:00+07:00` });
+          await schedule({ classId: duoClass.id, maxCapacity: 2, startTime: `${day}T19:00:00+07:00`, endTime: `${day}T20:00:00+07:00` });
+        }
+      }
+    } else await schedule();
+    fs.writeFileSync(path.join(reportDir, 'ui-server.json'), JSON.stringify({ base, stopFile: path.join(reportDir, 'stop-ui'), ...uiContext }));
     console.log(`UI QA READY ${base}`);
     await new Promise(resolve => { const timer = setInterval(() => { if (fs.existsSync(path.join(reportDir, 'stop-ui'))) { clearInterval(timer); resolve(); } }, 1000); });
     return;
   }
   if (!process.argv.includes('--skip-legacy')) {
     await schedule();
-    await runLegacy('test-admin-crud.js'); await runLegacy('test-usecases.js');
+    await runLegacy('test-admin-crud.js');
+    // The feedback scenario requires a real enrollment with the signed-in coach.
+    const feedbackSchedule = await schedule();
+    await api(`/schedules/${feedbackSchedule.id}/book`, 'POST', undefined, 'member');
+    await runLegacy('test-usecases.js');
     const tables = db.entityMetadatas.map(m => `"${m.tableName.replaceAll('"', '""')}"`).join(',');
     await db.query(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`); await initializeFixtures();
   }
+  await require('./package-catalog.cjs')({ test, api, rejected, repo, save, newMember, assign, fixtures });
+  await require('./package-flow.cjs')({ test, api, rejected, raw, repo, save, newMember, assign, schedule, fixtures });
   await suite();
 }
 (async () => {

@@ -141,19 +141,11 @@ const initialPermissions: PermissionGroup[] = [
       { key: 'view_my_class', label: 'Xem lịch dạy cá nhân', admin: true, receptionist: false, instructor: true, member: false },
       { key: 'design_workout', label: 'Thiết kế giáo án & bài tập', admin: true, receptionist: false, instructor: true, member: false },
       { key: 'update_progress', label: 'Ghi nhận buổi tập & thể lực', admin: true, receptionist: false, instructor: true, member: false },
-      { key: 'send_feedback', label: 'Chấm điểm & gửi phản hồi học viên', admin: true, receptionist: false, instructor: true, member: false },
+      { key: 'send_feedback', label: 'Chấm điểm & lưu phản hồi học viên', admin: true, receptionist: false, instructor: true, member: false },
     ],
   },
   {
-    groupName: '5. Thiết bị, Cửa hàng & Bảo trì',
-    permissions: [
-      { key: 'view_equipment', label: 'Xem danh sách thiết bị phòng tập', admin: true, receptionist: true, instructor: true, member: false },
-      { key: 'schedule_maintenance', label: 'Lên lịch bảo trì & gửi thông báo', admin: true, receptionist: false, instructor: false, member: false },
-      { key: 'manage_products', label: 'Quản lý kho hàng & bán lẻ sản phẩm', admin: true, receptionist: true, instructor: false, member: false },
-    ],
-  },
-  {
-    groupName: '6. Báo cáo & Thống kê Doanh thu',
+    groupName: '5. Báo cáo & Thống kê Doanh thu',
     permissions: [
       { key: 'view_revenue', label: 'Xem báo cáo doanh thu & KPIs', admin: true, receptionist: false, instructor: false, member: false },
       { key: 'view_instructor_rep', label: 'Xem báo cáo hiệu suất HLV', admin: true, receptionist: false, instructor: false, member: false },
@@ -161,7 +153,7 @@ const initialPermissions: PermissionGroup[] = [
     ],
   },
   {
-    groupName: '7. Quản trị Hệ thống & Cấu hình',
+    groupName: '6. Quản trị Hệ thống & Cấu hình',
     permissions: [
       { key: 'manage_users', label: 'Quản lý tài khoản & phân quyền', admin: true, receptionist: false, instructor: false, member: false },
       { key: 'system_settings', label: 'Cài đặt Studio & Cổng thanh toán', admin: true, receptionist: false, instructor: false, member: false },

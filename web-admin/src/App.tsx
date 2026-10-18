@@ -5,21 +5,16 @@ import LoginPage from './pages/auth/LoginPage'
 import DashboardPage from './pages/dashboard/DashboardPage'
 import MembersPage from './pages/members/MembersPage'
 import MemberDetailPage from './pages/members/MemberDetailPage'
-import SchedulePage from './pages/schedule/SchedulePage'
-import ClassesPage from './pages/classes/ClassesPage'
+import ClassSchedulePage from './pages/schedule/ClassSchedulePage'
 import PackagesPage from './pages/packages/PackagesPage'
 import PromotionsPage from './pages/promotions/PromotionsPage'
 import TransactionsPage from './pages/transactions/TransactionsPage'
 import ReviewsPage from './pages/reviews/ReviewsPage'
 import InstructorsPage from './pages/instructors/InstructorsPage'
-import EquipmentPage from './pages/equipment/EquipmentPage'
 import ReportsPage from './pages/reports/ReportsPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import TeachingPage from './pages/teaching/TeachingPage'
-import ProductsPage from './pages/products/ProductsPage'
 import UsersPage from './pages/users/UsersPage'
-import RoomsPage from './pages/rooms/RoomsPage'
-import PrivateSessionsPage from './pages/private-sessions/PrivateSessionsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore()
@@ -55,18 +50,15 @@ export default function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="members/:id" element={<MemberDetailPage />} />
-          <Route path="schedule" element={<SchedulePage />} />
-          <Route path="classes" element={<ClassesPage />} />
-          <Route path="rooms" element={<RoomsPage />} />
-          <Route path="private-sessions" element={<PrivateSessionsPage />} />
+          <Route path="schedule" element={<ClassSchedulePage />} />
+          <Route path="classes" element={<Navigate to="/schedule?tab=classes" replace />} />
+          <Route path="private-sessions" element={<Navigate to="/packages" replace />} />
           <Route path="teaching" element={<TeachingPage />} />
           <Route path="packages" element={<PackagesPage />} />
-          <Route path="products" element={<ProductsPage />} />
           <Route path="promotions" element={<PromotionsPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="instructors" element={<InstructorsPage />} />
-          <Route path="equipment" element={<EquipmentPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="settings" element={<SettingsPage />} />

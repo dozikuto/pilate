@@ -9,7 +9,6 @@ import {
   Modal,
   TextInput,
   ActivityIndicator,
-  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -319,7 +318,6 @@ export default function ProfileScreen() {
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(true);
 
   function handleLogout() {
     setShowLogoutModal(true);
@@ -407,21 +405,6 @@ export default function ProfileScreen() {
           <Text className="text-xs font-semibold text-gray-400 uppercase px-4 pt-4 pb-2 tracking-wide">
             Cài đặt
           </Text>
-          <MenuRow
-            icon="notifications-outline"
-            label="Thông báo đẩy"
-            sublabel={pushEnabled ? "Đang bật" : "Đang tắt"}
-            onPress={() => setPushEnabled((v) => !v)}
-            right={
-              <Switch
-                value={pushEnabled}
-                onValueChange={setPushEnabled}
-                trackColor={{ false: "#E5E7EB", true: "#1A3A5C" }}
-                thumbColor="white"
-              />
-            }
-          />
-          <View className="h-px bg-gray-100 ml-16" />
           <MenuRow
             icon="help-circle-outline"
             label="Trợ giúp & Hỗ trợ"

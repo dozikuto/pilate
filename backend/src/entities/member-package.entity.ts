@@ -5,6 +5,7 @@ import {
 import { Member } from './member.entity';
 import { Package } from './package.entity';
 import { Transaction } from './transaction.entity';
+import { User } from './user.entity';
 
 export enum MemberPackageStatus {
   ACTIVE = 'active',
@@ -28,6 +29,20 @@ export class MemberPackage {
 
   @Column({ name: 'remaining_sessions', nullable: true })
   remainingSessions: number;
+
+  @Column({ name: 'preferred_instructor_id', type: 'uuid', nullable: true })
+  preferredInstructorId: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'preferred_instructor_id' })
+  preferredInstructor: User;
+
+  @Column({ name: 'duo_partner_package_id', type: 'uuid', nullable: true })
+  duoPartnerPackageId: string | null;
+
+  @ManyToOne(() => MemberPackage, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'duo_partner_package_id' })
+  duoPartnerPackage: MemberPackage;
 
   @Column({ name: 'start_date', type: 'date' })
   startDate: Date;

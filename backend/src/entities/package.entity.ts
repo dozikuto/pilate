@@ -4,6 +4,7 @@ import {
 } from 'typeorm';
 import { Branch } from './branch.entity';
 import { PackageType } from '../common/enums/package-type.enum';
+import { PrivateSessionType } from '../common/enums/private-session-type.enum';
 
 @Entity('packages')
 export class Package {
@@ -15,6 +16,9 @@ export class Package {
 
   @Column()
   name: string;
+
+  @Column({ name: 'catalog_code', type: 'varchar', nullable: true, unique: true })
+  catalogCode: string | null;
 
   @Column({ type: 'text', nullable: true })
   description: string;
@@ -36,6 +40,15 @@ export class Package {
 
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
+
+  @Column({ name: 'private_session_enabled', default: false })
+  privateSessionEnabled: boolean;
+
+  @Column({ name: 'private_session_type', type: 'enum', enum: PrivateSessionType, default: PrivateSessionType.PRIVATE_1V1 })
+  privateSessionType: PrivateSessionType;
+
+  @Column({ name: 'private_session_duration_minutes', default: 60 })
+  privateSessionDurationMinutes: number;
 
   @ManyToOne(() => Branch, { nullable: true })
   @JoinColumn({ name: 'branch_id' })

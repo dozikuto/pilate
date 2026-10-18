@@ -170,7 +170,7 @@ export default function PromotionsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Chương Trình Khuyến Mãi (R5.2)</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Chương Trình Khuyến Mãi</h1>
           <p className="text-gray-500 text-sm mt-1">
             Quản lý mã giảm giá, voucher và các chiến dịch ưu đãi cho học viên
           </p>
