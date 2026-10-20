@@ -19,6 +19,7 @@ import { useAuthStore } from "@/store/auth.store";
 import { useDashboardStats } from "@/hooks/usePackages";
 import apiClient from "@/lib/axios";
 import { notifyAlert } from "@/lib/alert";
+import { passwordChangeRequest } from "@/lib/passwordChange";
 
 interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
@@ -83,8 +84,8 @@ function ChangePasswordModal({
       notifyAlert("Thiếu thông tin", "Vui lòng điền đầy đủ các trường.");
       return;
     }
-    if (newPwd.length < 6) {
-      notifyAlert("Lỗi", "Mật khẩu mới tối thiểu 6 ký tự.");
+    if (newPwd.length < 8) {
+      notifyAlert("Lỗi", "Mật khẩu mới tối thiểu 8 ký tự.");
       return;
     }
     if (newPwd !== confirmPwd) {
@@ -93,18 +94,15 @@ function ChangePasswordModal({
     }
     setLoading(true);
     try {
-      await apiClient.put("/auth/change-password", {
-        currentPassword: oldPwd,
-        newPassword: newPwd,
-      });
+      await apiClient.put("/auth/change-password", passwordChangeRequest(oldPwd, newPwd, confirmPwd));
       notifyAlert("Thành công", "Đổi mật khẩu thành công!");
       setOldPwd("");
       setNewPwd("");
       setConfirmPwd("");
       onClose();
     } catch (err: any) {
-      const msg = err?.response?.data?.message ?? "Đổi mật khẩu thất bại.";
-      notifyAlert("Lỗi", msg);
+      const msg = err?.response?.data?.message ?? err?.message ?? "Đổi mật khẩu thất bại.";
+      notifyAlert("Lỗi", Array.isArray(msg) ? msg.join("\n") : msg);
     } finally {
       setLoading(false);
     }
@@ -146,6 +144,7 @@ function ChangePasswordModal({
               <View className="flex-row items-center border border-gray-200 rounded-xl px-4 bg-gray-50">
                 <Ionicons name="lock-closed-outline" size={16} color="#9CA3AF" />
                 <TextInput
+                  accessibilityLabel={label}
                   className="flex-1 h-12 ml-3 text-gray-800"
                   placeholder="••••••••"
                   placeholderTextColor="#9CA3AF"

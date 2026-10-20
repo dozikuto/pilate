@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
 import api from '@/lib/axios'
 import toast from 'react-hot-toast'
+import { userAccountUpdate } from '@/lib/userAccountPayload'
 
 interface UserAccount {
   id: string
@@ -19,81 +20,6 @@ interface UserAccount {
   isActive: boolean
   createdAt: string
 }
-
-const initialUsers: UserAccount[] = [
-  {
-    id: 'u1',
-    fullName: 'Quản Trị Viên Hệ Thống',
-    email: 'admin@pilatesms.vn',
-    phone: '0901000001',
-    role: 'admin',
-    isActive: true,
-    createdAt: '2026-09-01',
-  },
-  {
-    id: 'u2',
-    fullName: 'Lễ Tân Thu Ngân (Ca Sáng)',
-    email: 'letan.sang@pilatesms.vn',
-    phone: '0902000002',
-    role: 'receptionist',
-    isActive: true,
-    createdAt: '2026-09-05',
-  },
-  {
-    id: 'u3',
-    fullName: 'Lễ Tân Thu Ngân (Ca Chiều)',
-    email: 'letan.chieu@pilatesms.vn',
-    phone: '0902000003',
-    role: 'receptionist',
-    isActive: true,
-    createdAt: '2026-09-10',
-  },
-  {
-    id: 'u4',
-    fullName: 'HLV Phạm Mai Linh',
-    email: 'linh.pham@pilatesms.vn',
-    phone: '0903000004',
-    role: 'instructor',
-    isActive: true,
-    createdAt: '2026-09-02',
-  },
-  {
-    id: 'u5',
-    fullName: 'HLV Trần Quốc Hưng',
-    email: 'hung.tran@pilatesms.vn',
-    phone: '0903000005',
-    role: 'instructor',
-    isActive: true,
-    createdAt: '2026-09-03',
-  },
-  {
-    id: 'u6',
-    fullName: 'Nguyễn Thu Hằng',
-    email: 'hang.nguyen@gmail.com',
-    phone: '0981234001',
-    role: 'member',
-    isActive: true,
-    createdAt: '2026-09-15',
-  },
-  {
-    id: 'u7',
-    fullName: 'Lê Tuấn Minh',
-    email: 'minh.le@gmail.com',
-    phone: '0981234002',
-    role: 'member',
-    isActive: true,
-    createdAt: '2026-09-18',
-  },
-  {
-    id: 'u8',
-    fullName: 'lê văn luyện',
-    email: '322@gmail.com',
-    phone: '0901234567',
-    role: 'member',
-    isActive: true,
-    createdAt: '2026-09-29',
-  },
-]
 
 interface PermissionGroup {
   groupName: string
@@ -164,7 +90,7 @@ const initialPermissions: PermissionGroup[] = [
 
 export default function UsersPage() {
   const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users')
-  const [users, setUsers] = useState<UserAccount[]>(initialUsers)
+  const [users, setUsers] = useState<UserAccount[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
 
@@ -196,7 +122,7 @@ export default function UsersPage() {
         const res = await api.get('/users')
         const payload = res.data?.data ?? res.data
         const items = Array.isArray(payload) ? payload : (payload?.items ?? [])
-        if (items.length > 0) {
+        {
           const mapped = items.map((u: any) => ({
             id: u.id,
             fullName: u.fullName || 'Người dùng',
@@ -208,7 +134,9 @@ export default function UsersPage() {
           }))
           setUsers(mapped)
         }
-      } catch {}
+      } catch {
+        toast.error('Không tải được danh sách tài khoản. Vui lòng thử lại.')
+      }
     }
     fetchUsers()
   }, [])
@@ -266,16 +194,15 @@ export default function UsersPage() {
       toast.error('Vui lòng nhập họ tên và email')
       return
     }
+    if (formData.password && formData.password.length < 8) {
+      toast.error('Mật khẩu phải có ít nhất 8 ký tự')
+      return
+    }
 
     try {
       if (editingUser) {
-        if (isUuid(editingUser.id)) {
-          await api.patch(`/users/${editingUser.id}`, {
-            fullName: formData.fullName,
-            phone: formData.phone,
-            role: formData.role,
-          })
-        }
+        if (!isUuid(editingUser.id)) throw new Error('Tài khoản không hợp lệ. Vui lòng tải lại trang.')
+        await api.patch(`/users/${editingUser.id}`, userAccountUpdate(formData))
         setUsers((prev) =>
           prev.map((u) =>
             u.id === editingUser.id
@@ -314,6 +241,7 @@ export default function UsersPage() {
         toast.success('Thêm tài khoản mới thành công!')
       }
       setIsModalOpen(false)
+      setFormData((prev) => ({ ...prev, password: '' }))
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi lưu tài khoản')
     }
@@ -598,6 +526,7 @@ export default function UsersPage() {
                 <label className="font-medium text-gray-700 block mb-1">Email đăng nhập *</label>
                 <Input
                   type="email"
+                  disabled={!!editingUser}
                   placeholder="huong.tran@pilatesms.vn"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -633,6 +562,9 @@ export default function UsersPage() {
                 </label>
                 <Input
                   type="password"
+                  aria-label={editingUser ? 'Mật khẩu mới' : 'Mật khẩu khởi tạo'}
+                  autoComplete="new-password"
+                  minLength={8}
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}

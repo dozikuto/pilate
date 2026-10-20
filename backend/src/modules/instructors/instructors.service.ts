@@ -151,11 +151,12 @@ export class InstructorsService {
   async findAll(pagination: PaginationDto) {
     const qb = this.instructorsRepository
       .createQueryBuilder('instructor')
-      .leftJoinAndSelect('instructor.user', 'user');
+      .leftJoinAndSelect('instructor.user', 'user')
+      .where('user.isActive = :isActive', { isActive: true });
 
     if (pagination.search) {
-      qb.where(
-        'user.fullName ILIKE :search OR user.email ILIKE :search',
+      qb.andWhere(
+        '(user.fullName ILIKE :search OR user.email ILIKE :search)',
         { search: `%${pagination.search}%` },
       );
     }
@@ -232,12 +233,8 @@ export class InstructorsService {
   }
 
   async remove(id: string) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-      return { success: true };
-    }
     const instructor = await this.findOne(id);
-    await this.usersRepository.update(instructor.userId, { isActive: false });
+    await this.usersRepository.update(instructor.userId, { isActive: false, refreshTokenHash: null });
     return { success: true };
   }
 }

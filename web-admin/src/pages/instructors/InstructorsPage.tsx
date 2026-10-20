@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Star, Award, Phone, Mail, Edit, Trash2 } from 'lucide-react'
+import { Plus, Award, Phone, Mail, Edit, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Modal, ModalFooter } from '@/components/ui/Modal'
@@ -16,54 +16,17 @@ interface InstructorItem {
   phone: string
   specializations: string[]
   bio: string
-  rating: number
-  totalClasses: number
   hourlyRate: number
   status: 'active' | 'inactive'
 }
 
-const mockInstructors: InstructorItem[] = [
-  {
-    id: 'i1',
-    name: 'Trần Mai Lan',
-    email: 'coach.lan@pilatesms.vn',
-    phone: '0909333444',
-    specializations: ['Reformer', 'Cadillac', 'Phục hồi sau sinh'],
-    bio: '6 năm kinh nghiệm giảng dạy Pilates Reformer, tốt nghiệp STOTT Pilates Comprehensive.',
-    rating: 4.9,
-    totalClasses: 320,
-    hourlyRate: 400000,
-    status: 'active',
-  },
-  {
-    id: 'i2',
-    name: 'Vũ Quốc Huy',
-    email: 'coach.huy@pilatesms.vn',
-    phone: '0909555666',
-    specializations: ['Trị liệu cột sống', 'Reformer nâng cao', 'Matwork'],
-    bio: 'Chuyên gia vật lý trị liệu & Pilates thoái hóa cột sống, Balanced Body Master.',
-    rating: 4.8,
-    totalClasses: 280,
-    hourlyRate: 450000,
-    status: 'active',
-  },
-  {
-    id: 'i3',
-    name: 'Nguyễn Bích Phương',
-    email: 'coach.phuong@pilatesms.vn',
-    phone: '0909777888',
-    specializations: ['Cadillac', 'Wunda Chair', 'Barre Pilates'],
-    bio: 'Huấn luyện viên tràn đầy năng lượng với phong cách tập luyện kết hợp Cardio và Pilates.',
-    rating: 5.0,
-    totalClasses: 195,
-    hourlyRate: 380000,
-    status: 'active',
-  },
-]
-
 export default function InstructorsPage() {
-  const [instructors, setInstructors] = useState<InstructorItem[]>(mockInstructors)
-  const [loading, setLoading] = useState(false)
+  const [instructors, setInstructors] = useState<InstructorItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<InstructorItem | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingInstructor, setEditingInstructor] = useState<InstructorItem | null>(null)
 
@@ -81,27 +44,25 @@ export default function InstructorsPage() {
 
   const fetchInstructors = async () => {
     setLoading(true)
+    setLoadError('')
     try {
-      const res = await api.get('/instructors')
+      const res = await api.get('/instructors?limit=100')
       const data = res.data?.data || res.data
       const items = Array.isArray(data) ? data : data?.items || []
-      if (items.length > 0) {
-        const mapped = items.map((ins: any) => ({
+      const mapped = items.filter((ins: any) => ins.user?.isActive !== false).map((ins: any) => ({
           id: ins.id,
           name: ins.user?.fullName || ins.name || 'HLV Pilates',
-          email: ins.user?.email || ins.email || 'coach@pilatesms.vn',
-          phone: ins.user?.phone || ins.phone || '0901234567',
-          specializations: ins.specializations || ['Reformer', 'Mat'],
-          bio: ins.bio || 'Huấn luyện viên Pilates chuyên nghiệp tại PilatesMS.',
-          rating: 4.9,
-          totalClasses: 120,
-          hourlyRate: Number(ins.hourlyRate ?? 400000),
+          email: ins.user?.email || ins.email || '—',
+          phone: ins.user?.phone || ins.phone || '—',
+          specializations: ins.specializations || [],
+          bio: ins.bio || 'Chưa có thông tin giới thiệu.',
+          hourlyRate: Number(ins.hourlyRate ?? 0),
           status: ins.user?.isActive === false ? 'inactive' : 'active',
         }))
-        setInstructors(mapped)
-      }
+      setInstructors(mapped)
     } catch {
-      // fallback
+      setInstructors([])
+      setLoadError('Không tải được danh sách huấn luyện viên. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -138,6 +99,7 @@ export default function InstructorsPage() {
   }
 
   const handleSave = async () => {
+    if (saving) return
     const hourlyRate = parseNumberInput(formData.hourlyRate)
     if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
       toast.error('Vui lòng nhập thù lao từ 0 đồng')
@@ -153,76 +115,48 @@ export default function InstructorsPage() {
       .map((s) => s.trim())
       .filter(Boolean)
 
+    setSaving(true)
     try {
-      if (editingInstructor) {
-        if (isUuid(editingInstructor.id)) {
-          await api.patch(`/instructors/${editingInstructor.id}`, {
-            fullName: formData.name,
-            phone: formData.phone,
-            hourlyRate,
-            specializations: specs,
-            bio: formData.bio,
-          })
-        }
-        setInstructors((prev) =>
-          prev.map((ins) =>
-            ins.id === editingInstructor.id
-              ? {
-                  ...ins,
-                  name: formData.name,
-                  email: formData.email,
-                  phone: formData.phone,
-                  hourlyRate,
-                  specializations: specs,
-                  bio: formData.bio,
-                }
-              : ins
-          )
-        )
-        toast.success('Cập nhật thông tin HLV thành công!')
-      } else {
-        let createdId = `ins-${Date.now()}`
-        const res = await api.post('/instructors', {
-          fullName: formData.name,
-          email: formData.email || `coach.${Date.now()}@pilatesms.vn`,
-          phone: formData.phone || undefined,
-          hourlyRate,
-          specializations: specs,
-          bio: formData.bio,
-        })
-        const saved = res.data?.data || res.data
-        if (saved?.id) createdId = saved.id
-        const newIns: InstructorItem = {
-          id: createdId,
-          name: formData.name,
-          email: formData.email || 'coach@pilatesms.vn',
-          phone: formData.phone || '0901234567',
-          specializations: specs.length > 0 ? specs : ['Reformer'],
-          bio: formData.bio || 'Huấn luyện viên Pilates chuyên nghiệp',
-          rating: 5.0,
-          totalClasses: 0,
-          hourlyRate,
-          status: 'active',
-        }
-        setInstructors((prev) => [newIns, ...prev])
-        toast.success('Thêm Huấn luyện viên mới thành công!')
+      const payload = {
+        fullName: formData.name.trim(),
+        phone: formData.phone,
+        hourlyRate,
+        specializations: specs,
+        bio: formData.bio,
       }
+      if (editingInstructor) {
+        if (!isUuid(editingInstructor.id)) throw new Error('HLV không hợp lệ. Vui lòng tải lại trang.')
+        await api.patch(`/instructors/${editingInstructor.id}`, payload)
+      } else {
+        await api.post('/instructors', {
+          ...payload,
+          email: formData.email || `coach.${Date.now()}@pilatesms.vn`,
+        })
+      }
+      await fetchInstructors()
+      toast.success(editingInstructor ? 'Cập nhật thông tin HLV thành công!' : 'Thêm huấn luyện viên thành công!')
       setIsModalOpen(false)
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi lưu HLV')
+    } finally {
+      setSaving(false)
     }
   }
 
   const handleDelete = async (ins: InstructorItem) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa HLV "${ins.name}"?`)) return
+    if (deletingId) return
+    setDeletingId(ins.id)
     try {
-      if (isUuid(ins.id)) {
-        await api.delete(`/instructors/${ins.id}`)
-      }
+      if (!isUuid(ins.id)) throw new Error('HLV không hợp lệ. Vui lòng tải lại trang.')
+      await api.delete(`/instructors/${ins.id}`)
       setInstructors((prev) => prev.filter((i) => i.id !== ins.id))
+      await fetchInstructors()
       toast.success('Xóa Huấn luyện viên thành công!')
+      setDeleteTarget(null)
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Có lỗi xảy ra khi xóa HLV')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -241,6 +175,11 @@ export default function InstructorsPage() {
         </Button>
       </div>
 
+      {loading && <p role="status" className="text-sm text-gray-500">Đang tải danh sách huấn luyện viên...</p>}
+      {loadError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        {loadError} <button className="ml-2 underline" onClick={fetchInstructors}>Thử lại</button>
+      </div>}
+      {!loading && !loadError && instructors.length === 0 && <p className="rounded-xl border border-gray-200 bg-white p-6 text-gray-500">Chưa có huấn luyện viên đang hoạt động.</p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {instructors.map((ins) => (
           <div
@@ -254,11 +193,6 @@ export default function InstructorsPage() {
                 </div>
                 <div>
                   <h3 className="font-bold text-lg text-gray-900">{ins.name}</h3>
-                  <div className="flex items-center gap-1 text-yellow-500 text-xs mt-0.5">
-                    <Star className="w-3.5 h-3.5 fill-current" />
-                    <span className="font-bold text-gray-700">{ins.rating}</span>
-                    <span className="text-gray-400">({ins.totalClasses} lớp)</span>
-                  </div>
                 </div>
               </div>
 
@@ -304,7 +238,9 @@ export default function InstructorsPage() {
                 variant="ghost"
                 size="sm"
                 className="text-red-500 hover:text-red-700"
-                onClick={() => handleDelete(ins)}
+                onClick={() => setDeleteTarget(ins)}
+                aria-label={`Xóa HLV ${ins.name}`}
+                disabled={deletingId !== null}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
@@ -313,6 +249,13 @@ export default function InstructorsPage() {
         ))}
       </div>
 
+      {deleteTarget && <Modal open onClose={() => { if (!deletingId) setDeleteTarget(null) }} title="Xóa huấn luyện viên">
+        <p className="py-4 text-sm text-gray-700">Xóa HLV <strong>{deleteTarget.name}</strong> khỏi danh sách đang hoạt động? Lịch dạy và lịch sử học viên được giữ lại.</p>
+        <ModalFooter>
+          <Button variant="outline" disabled={!!deletingId} onClick={() => setDeleteTarget(null)}>Hủy</Button>
+          <Button variant="danger" loading={!!deletingId} onClick={() => handleDelete(deleteTarget)}>Xác nhận xóa</Button>
+        </ModalFooter>
+      </Modal>}
       {isModalOpen && (
         <Modal
           open={isModalOpen}
@@ -382,7 +325,7 @@ export default function InstructorsPage() {
             <Button variant="outline" onClick={() => setIsModalOpen(false)}>
               Hủy
             </Button>
-            <Button onClick={handleSave}>
+            <Button onClick={handleSave} loading={saving}>
               {editingInstructor ? 'Lưu Thay Đổi' : 'Lưu HLV'}
             </Button>
           </ModalFooter>

@@ -950,6 +950,10 @@ async function main() {
     await new Promise(resolve => { const timer = setInterval(() => { if (fs.existsSync(path.join(reportDir, 'stop-ui'))) { clearInterval(timer); resolve(); } }, 1000); });
     return;
   }
+  if (process.argv.includes('--account-regressions')) {
+    await require('./account-regressions.cjs')({ test, api, rejected, repo, save, newMember, schedule, fixtures });
+    return;
+  }
   if (!process.argv.includes('--skip-legacy')) {
     await schedule();
     await runLegacy('test-admin-crud.js');
@@ -963,6 +967,7 @@ async function main() {
   await require('./package-catalog.cjs')({ test, api, rejected, repo, save, newMember, assign, fixtures });
   await require('./package-flow.cjs')({ test, api, rejected, raw, repo, save, newMember, assign, schedule, fixtures });
   await suite();
+  await require('./account-regressions.cjs')({ test, api, rejected, repo, save, newMember, schedule, fixtures });
 }
 (async () => {
   let fatal;

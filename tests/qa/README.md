@@ -1,5 +1,7 @@
 # Kiểm thử use case Pilates
 
+Xóa HLV và mật khẩu: từ thư mục `backend`, chạy `node ../tests/qa/run-integration.cjs --account-regressions` sau khi biên dịch backend. Bộ 11 ca dùng database tạm, kiểm tra HLV không trở lại sau xóa/tìm kiếm, danh sách rỗng, quyền xóa, giữ lịch sử, đặt lại mật khẩu qua request builder của admin và đổi mật khẩu qua request builder của học viên. Kiểm tra mật khẩu mới đăng nhập được, mật khẩu cũ bị từ chối và bỏ trống khi sửa không đổi mật khẩu. Từ thư mục gốc, `node tests/qa/run-password-client.cjs` chạy 2 ca kiểm tra lỗi sai mật khẩu hiện tại không xóa phiên học viên, còn lỗi 401 thông thường vẫn xóa phiên không hợp lệ.
+
 Luồng gói tập/HLV/tập đôi: runner HTTP tự chạy thêm `package-flow.cjs` với 11 ca kiểm thử về số buổi đã tập/đã đặt, check-in không trừ hai lần, hủy sớm/muộn, HLV ưu tiên và quyền sở hữu, ghép đôi đối ứng, buổi cuối và chống ghép chéo khi có request đồng thời. `--serve --package-flow` tạo fixture riêng để kiểm tra giao diện cả admin và học viên. Quy trình sử dụng ở `docs/Luong_goi_tap_va_dat_lich.md`.
 
 Lịch tuần: `node tests/qa/run-weekly-booking.cjs` chạy 12 ca cho bộ chọn của học viên (Thứ 3/Thứ 7, múi giờ, lọc giờ/lớp/HLV, giữ lựa chọn thủ công, giới hạn gói, buổi đầy/trùng/hết hạn, thiếu lịch và gói theo thời gian). Runner HTTP bên dưới có 7 ca bổ sung cho admin xem trước/tạo lịch lặp, kiểm tra ngày xung đột, rollback, validation, phân quyền và tạo đồng thời.

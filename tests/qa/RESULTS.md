@@ -67,3 +67,12 @@ Chưa xác nhận thao tác giao diện bằng trình duyệt hoặc thiết b�
 Các test chạy trên database tạo mới; không seed, restore hoặc sửa dữ liệu database hiện có. Bản sửa có cột `bookings.session_deducted`, `transactions.package_id` và bảng `system_settings`. Dự án đang dùng TypeORM synchronize trong môi trường local; khi triển khai môi trường tắt synchronize cần migration tương ứng. Với booking/giao dịch cũ, dữ liệu trước đây không lưu nguồn trừ buổi hoặc packageId của giao dịch pending; cần đối chiếu dữ liệu lịch sử trước khi chuyển các bản ghi đó qua luồng mới.
 
 Chạy lại từ `C:\pilates\backend`: `npm run test:qa`. Xem `tests/qa/README.md` để chọn kết nối PostgreSQL và nơi lưu JSON/log. Snapshot backup của các test được lưu trong thư mục kết quả QA, không đưa vào Git.
+## Kiểm thử xóa HLV và mật khẩu ngày 20/10/2026
+
+- **11/11 ca API/PostgreSQL đạt**, database QA đã được xóa. Chạy bằng `--account-regressions`; đây là lượt kiểm thử tập trung, không phải chạy lại toàn bộ regression.
+- **2/2 ca phía client đạt**: nhập sai mật khẩu hiện tại không làm mất token; lỗi 401 thông thường vẫn xóa token không hợp lệ.
+- Sửa danh sách HLV chỉ lấy tài khoản đang hoạt động, giữ điều kiện lọc khi tìm tên/email. Xóa giữ hồ sơ, lịch dạy và booking; tài khoản ngừng hoạt động không đăng nhập được. UI bỏ dữ liệu mẫu, tải lại từ API sau thao tác và có trạng thái rỗng/lỗi rõ ràng.
+- Admin gửi mật khẩu mới khi sửa tài khoản, bỏ trường password nếu để trống. Client và DTO kiểm tra tối thiểu 8 ký tự. Web học viên gửi đúng `oldPassword` thay vì `currentPassword`.
+- Giao diện kiểm thử dùng API/database riêng: đã xóa hai HLV mẫu, tải lại trang và xác nhận danh sách vẫn rỗng; kiểm tra trường mật khẩu mới trong biểu mẫu admin có `minlength=8`. Không đổi mật khẩu tài khoản đang sử dụng của người dùng qua trình duyệt.
+- Backend và mobile TypeScript đạt. Web admin build đạt, còn cảnh báo bundle lớn đã có trước.
+- Báo cáo API: `backend/.qa-temp/account-fixes-20261020/integration-results.json`. Ảnh QA ở `backend/.qa-temp/account-ui-20261020/`; dữ liệu và ảnh thử nghiệm không đưa vào Git.

@@ -32,7 +32,8 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    const isPasswordChange = error.config?.url?.split("?")[0].endsWith("/auth/change-password");
+    if (error.response?.status === 401 && !isPasswordChange) {
       await storage.deleteItem(TOKEN_KEY);
       delete apiClient.defaults.headers.common["Authorization"];
     }
